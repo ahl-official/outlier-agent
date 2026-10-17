@@ -1,0 +1,27 @@
+{
+  "name": "outlier-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Viral outlier video discovery & breakdown desk for American Hairline",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "radar": "tsx scripts/radar-run.ts",
+    "test-keys": "tsx scripts/test-keys.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "lucide-react": "^0.475.0",
+    "next": "^14.2.24",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}
