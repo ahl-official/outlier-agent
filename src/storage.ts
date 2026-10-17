@@ -88,11 +88,16 @@ function safeReadJson<T>(filename: string, fallback: T): T {
 // ---------------------------------------------------------------------
 // 1. BOARD / SAVED OUTLIERS PERSISTENCE
 // ---------------------------------------------------------------------
-export function getBoardItems(): BoardItem[] {
-  if (inMemoryStore.board) return inMemoryStore.board;
-  const items = safeReadJson<BoardItem[]>('board.json', []);
-  inMemoryStore.board = items;
-  return items;
+export function getBoardItems(forceRefresh: boolean = false): BoardItem[] {
+  if (!forceRefresh && inMemoryStore.board && inMemoryStore.board.length > 0) {
+    return inMemoryStore.board;
+  }
+  const fromDisk = safeReadJson<BoardItem[] | null>('board.json', null);
+  if (Array.isArray(fromDisk)) {
+    inMemoryStore.board = fromDisk;
+    return fromDisk;
+  }
+  return inMemoryStore.board || [];
 }
 
 export function saveBoardItems(items: BoardItem[]): void {

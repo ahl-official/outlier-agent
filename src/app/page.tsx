@@ -174,15 +174,34 @@ export default function HomePage() {
     }
   };
 
-  const fetchBoardData = async () => {
+  const [isRefreshingBoard, setIsRefreshingBoard] = useState<boolean>(false);
+
+  const fetchBoardData = async (showFeedback: boolean = false) => {
+    setIsRefreshingBoard(true);
     try {
-      const res = await fetch('/api/board');
+      const res = await fetch(`/api/board?refresh=true&t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
       const data = await res.json();
       if (data.items) {
         setBoardItems(data.items);
+        if (showFeedback) {
+          showToast(`Library refreshed (${data.items.length} saved outliers)`);
+        }
+      } else if (showFeedback) {
+        showToast('Library refreshed');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching board items:', err);
+      if (showFeedback) {
+        showToast('Error refreshing library');
+      }
+    } finally {
+      setIsRefreshingBoard(false);
     }
   };
 
@@ -1268,9 +1287,12 @@ export default function HomePage() {
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
                 className="btn btn-outline btn-sm"
-                onClick={fetchBoardData}
+                onClick={() => fetchBoardData(true)}
+                disabled={isRefreshingBoard}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
               >
-                <RefreshCw size={14} /> Refresh Library
+                <RefreshCw size={14} className={isRefreshingBoard ? 'spin' : ''} />
+                {isRefreshingBoard ? 'Refreshing...' : 'Refresh Library'}
               </button>
               <button
                 className="btn btn-primary btn-sm"

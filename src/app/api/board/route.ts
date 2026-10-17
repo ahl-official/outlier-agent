@@ -2,9 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBoardItems, addCandidateToBoard, updateBoardItemStatus, saveBoardItems } from '@/storage';
 import { BoardStatus } from '@/types';
 
-export async function GET() {
-  const items = getBoardItems();
-  return NextResponse.json({ items });
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+export async function GET(req: NextRequest) {
+  const url = new URL(req.url);
+  const force = url.searchParams.get('refresh') === 'true' || !!url.searchParams.get('t');
+  const items = getBoardItems(force);
+  return NextResponse.json(
+    { items },
+    {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        Pragma: 'no-cache',
+        Expires: '0'
+      }
+    }
+  );
 }
 
 export async function POST(req: NextRequest) {
