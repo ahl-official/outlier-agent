@@ -1,15 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getActiveKeywords, addCustomKeyword, removeCustomKeyword } from '@/storage';
+import { getActiveKeywords, getActiveBrand, switchActiveBrand, addCustomKeyword, removeCustomKeyword } from '@/storage';
 
 export async function GET() {
+  const brand = getActiveBrand();
   const keywords = getActiveKeywords();
-  return NextResponse.json({ keywords });
+  return NextResponse.json({ brand, keywords });
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { action, keyword } = body;
+    const { action, keyword, brand } = body;
+
+    if (action === 'switchBrand') {
+      if (brand !== 'AHL' && brand !== 'Alchemane') {
+        return NextResponse.json({ success: false, error: 'Brand must be AHL or Alchemane' }, { status: 400 });
+      }
+      const result = switchActiveBrand(brand);
+      return NextResponse.json({ success: true, brand: result.activeBrand, keywords: result.keywords });
+    }
 
     if (!keyword || typeof keyword !== 'string') {
       return NextResponse.json({ success: false, error: 'Valid keyword string is required' }, { status: 400 });

@@ -57,6 +57,9 @@ export default function HomePage() {
   const [currentBreakdown, setCurrentBreakdown] = useState<DetailedOutlierBreakdown | null>(null);
   const [currentCandidate, setCurrentCandidate] = useState<OutlierCandidate | null>(null);
 
+  // Brand context state: AHL vs Alchemane
+  const [currentBrand, setCurrentBrand] = useState<'AHL' | 'Alchemane'>('AHL');
+
   // Board state
   const [boardItems, setBoardItems] = useState<BoardItem[]>([]);
   const [editingItemNotes, setEditingItemNotes] = useState<{ id: string; notes: string } | null>(null);
@@ -80,11 +83,38 @@ export default function HomePage() {
     try {
       const res = await fetch('/api/keywords');
       const data = await res.json();
+      if (data.brand) {
+        setCurrentBrand(data.brand);
+      }
       if (data.keywords && Array.isArray(data.keywords) && data.keywords.length > 0) {
         setKeywordList(data.keywords);
+        if (!selectedKeyword || !data.keywords.includes(selectedKeyword)) {
+          setSelectedKeyword(data.keywords[0]);
+        }
       }
     } catch (err) {
       console.error('Error fetching keywords:', err);
+    }
+  };
+
+  const handleSwitchBrand = async (newBrand: 'AHL' | 'Alchemane') => {
+    if (newBrand === currentBrand) return;
+    try {
+      const res = await fetch('/api/keywords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'switchBrand', brand: newBrand })
+      });
+      const data = await res.json();
+      if (data.success && data.keywords) {
+        setCurrentBrand(newBrand);
+        setKeywordList(data.keywords);
+        setSelectedKeyword(data.keywords[0] || '');
+        setCustomKeyword('');
+        showToast(`Switched brand focus to: ${newBrand === 'AHL' ? 'American Hairline (Men)' : 'Alchemane (Women)'}`);
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Error switching brand');
     }
   };
 
@@ -308,9 +338,19 @@ export default function HomePage() {
   };
 
   const getOutlierBadgeClass = (multiplier: number) => {
-    if (multiplier >= 5) return 'outlier-high';
-    if (multiplier >= 2) return 'outlier-medium';
+    if (multiplier >= 10) return 'outlier-mega';
+    if (multiplier >= 5) return 'outlier-real';
+    if (multiplier >= 3) return 'outlier-notable';
     return 'outlier-regular';
+  };
+
+  const getOutlierTierLabel = (c: OutlierCandidate) => {
+    if (c.sopTaxonomy?.outlierTier) return c.sopTaxonomy.outlierTier;
+    const m = c.outlierMultiplier;
+    if (m >= 10) return `Mega Outlier (${m}x)`;
+    if (m >= 5) return `Real Outlier (${m}x)`;
+    if (m >= 3) return `Notable Outlier (${m}x)`;
+    return `Emerging (${m}x)`;
   };
 
   return (
@@ -326,12 +366,39 @@ export default function HomePage() {
       {/* Header */}
       <header className="app-header">
         <div>
-          <div className="brand-badge">
-            <Flame size={14} /> Outlier Intelligence Radar
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
+            <div className="brand-badge">
+              <Flame size={14} /> Outlier Intelligence Radar
+            </div>
+
+            {/* Brand Toggle Group: AHL vs Alchemane */}
+            <div className="brand-toggle-group">
+              <button
+                type="button"
+                className={`brand-toggle-btn ${currentBrand === 'AHL' ? 'active-ahl' : ''}`}
+                onClick={() => handleSwitchBrand('AHL')}
+                title="Switch to American Hairline (Men's Systems & Grooming)"
+              >
+                <span>💈 American Hairline (AHL)</span>
+              </button>
+              <button
+                type="button"
+                className={`brand-toggle-btn ${currentBrand === 'Alchemane' ? 'active-alchemane' : ''}`}
+                onClick={() => handleSwitchBrand('Alchemane')}
+                title="Switch to Alchemane (Women's Hair Toppers & Extensions)"
+              >
+                <span>✨ Alchemane</span>
+              </button>
+            </div>
           </div>
-          <h1 className="brand-title">Viral Outlier Discovery & Breakdown Desk</h1>
+
+          <h1 className="brand-title">
+            {currentBrand === 'AHL' ? 'AHL Viral Outlier Discovery & Strategy Desk' : 'Alchemane Viral Outlier & Hair Toppers Desk'}
+          </h1>
           <p className="brand-subtitle">
-            Accurate discovery, creator baselines, engagement ratios, and deep diagnostic breakdown for viral hair system videos.
+            {currentBrand === 'AHL'
+              ? "Men's Non-Surgical Hair Systems, Hair Patches & Grooming • Median Baselines (15-30 videos) • 3x/5x Multipliers • Indian Taboo-Busting Adaptation."
+              : "Women's Hair Toppers, Clip-in Extensions & Volume Solutions • Median Baselines • 3x/5x Multipliers • Elegant Luxury Aesthetics."}
           </p>
         </div>
 
@@ -615,12 +682,27 @@ export default function HomePage() {
                   <div className="card-body">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', gap: '8px' }}>
                       <span className={`outlier-badge ${getOutlierBadgeClass(c.outlierMultiplier)}`}>
-                        <Flame size={12} /> {c.outlierMultiplier}x Outlier
+                        <Flame size={12} /> {getOutlierTierLabel(c)}
                       </span>
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
                         Rank Score: <strong>{c.outlierScore}</strong>/100
                       </span>
                     </div>
+
+                    {/* SOP Taxonomy Tags */}
+                    {c.sopTaxonomy && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                        <span className="sop-tag" style={{ color: 'var(--cyan-400)', borderColor: 'rgba(6, 182, 212, 0.3)' }}>
+                          🎯 {c.sopTaxonomy.topicTag}
+                        </span>
+                        <span className="sop-tag" style={{ color: 'var(--gold-400)', borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+                          🎬 {c.sopTaxonomy.formatTag}
+                        </span>
+                        <span className="sop-tag" style={{ color: '#f472b6', borderColor: 'rgba(236, 72, 153, 0.3)' }}>
+                          ⚡ {c.sopTaxonomy.primaryEmotion}
+                        </span>
+                      </div>
+                    )}
 
                     <h3 className="card-title" title={c.title}>{c.title}</h3>
 
@@ -1047,6 +1129,124 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
+
+              {/* SOP Content Adaptation Desk (Why It Worked & Brand Adaptation Playbook) */}
+              {currentBreakdown.sopTaxonomy && (
+                <div className="glass-panel" style={{ padding: '24px', border: '1px solid rgba(245, 158, 11, 0.35)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <Flame size={20} color="var(--gold-400)" />
+                      <div>
+                        <span style={{ fontSize: '1.05rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          SOP Content Adaptation Desk
+                        </span>
+                        <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                          Analyze why it outperformed, tag the taxonomy, and adapt without copying.
+                        </div>
+                      </div>
+                      <span className={`outlier-badge ${getOutlierBadgeClass(currentBreakdown.metrics.outlierMultiplier)}`}>
+                        {currentBreakdown.sopTaxonomy.outlierTier}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <span className="sop-tag" style={{ color: 'var(--cyan-400)', borderColor: 'rgba(6, 182, 212, 0.4)' }}>
+                        Topic: {currentBreakdown.sopTaxonomy.topicTag}
+                      </span>
+                      <span className="sop-tag" style={{ color: 'var(--gold-400)', borderColor: 'rgba(245, 158, 11, 0.4)' }}>
+                        Format: {currentBreakdown.sopTaxonomy.formatTag}
+                      </span>
+                      <span className="sop-tag" style={{ color: '#f472b6', borderColor: 'rgba(236, 72, 153, 0.4)' }}>
+                        Emotion: {currentBreakdown.sopTaxonomy.primaryEmotion}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Winner Element Box */}
+                  <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--gold-400)' }}>
+                        Winning Element:
+                      </span>
+                      <span style={{ background: 'var(--gold-400)', color: '#000', fontSize: '0.75rem', fontWeight: 800, padding: '2px 8px', borderRadius: '4px' }}>
+                        {currentBreakdown.sopTaxonomy.winningElement}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.86rem', color: '#e2e8f0', margin: 0, lineHeight: 1.45 }}>
+                      {currentBreakdown.sopTaxonomy.adaptationPlays.winnerSummary}
+                    </p>
+                  </div>
+
+                  {/* Side-by-side Adaptation Plays */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '18px' }}>
+                    {/* AHL Adaptation Card */}
+                    <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(245, 158, 11, 0.35)', borderRadius: 'var(--radius-md)', padding: '18px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                        <span style={{ fontSize: '1.2rem' }}>💈</span>
+                        <div>
+                          <div style={{ fontSize: '0.94rem', fontWeight: 800, color: 'var(--gold-400)' }}>
+                            American Hairline (AHL) Adaptation Play
+                          </div>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
+                            Tone: {currentBreakdown.sopTaxonomy.adaptationPlays.ahlTone}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ marginBottom: '14px' }}>
+                        <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', color: 'var(--text-dim)', fontWeight: 700 }}>
+                          Tactical Execution Angle:
+                        </span>
+                        <p style={{ fontSize: '0.86rem', color: '#f1f5f9', marginTop: '4px', lineHeight: 1.45 }}>
+                          {currentBreakdown.sopTaxonomy.adaptationPlays.ahlAngle}
+                        </p>
+                      </div>
+
+                      <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '10px 12px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--gold-400)' }}>
+                        <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--gold-400)', fontWeight: 700 }}>
+                          Taboo & Social Reality Check:
+                        </span>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {currentBreakdown.sopTaxonomy.adaptationPlays.ahlTabooCheck}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Alchemane Adaptation Card */}
+                    <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(236, 72, 153, 0.35)', borderRadius: 'var(--radius-md)', padding: '18px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                        <span style={{ fontSize: '1.2rem' }}>✨</span>
+                        <div>
+                          <div style={{ fontSize: '0.94rem', fontWeight: 800, color: '#f472b6' }}>
+                            Alchemane Adaptation Play
+                          </div>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
+                            Tone: {currentBreakdown.sopTaxonomy.adaptationPlays.alchemaneTone}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ marginBottom: '14px' }}>
+                        <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', color: 'var(--text-dim)', fontWeight: 700 }}>
+                          Tactical Execution Angle:
+                        </span>
+                        <p style={{ fontSize: '0.86rem', color: '#f1f5f9', marginTop: '4px', lineHeight: 1.45 }}>
+                          {currentBreakdown.sopTaxonomy.adaptationPlays.alchemaneAngle}
+                        </p>
+                      </div>
+
+                      <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '10px 12px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid #f472b6' }}>
+                        <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#f472b6', fontWeight: 700 }}>
+                          Female Crown Thinning & Volume Check:
+                        </span>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {currentBreakdown.sopTaxonomy.adaptationPlays.alchemaneTabooCheck}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </main>
@@ -1100,8 +1300,8 @@ export default function HomePage() {
                       <span className={`platform-pill ${item.candidate.platform}`}>
                         {item.candidate.platform}
                       </span>
-                      <span className="outlier-badge outlier-high" style={{ fontSize: '0.7rem' }}>
-                        {item.candidate.outlierMultiplier}x
+                      <span className={`outlier-badge ${getOutlierBadgeClass(item.candidate.outlierMultiplier)}`} style={{ fontSize: '0.7rem' }}>
+                        {getOutlierTierLabel(item.candidate)}
                       </span>
                     </div>
 
@@ -1167,8 +1367,8 @@ export default function HomePage() {
                       <span className={`platform-pill ${item.candidate.platform}`}>
                         {item.candidate.platform}
                       </span>
-                      <span className="outlier-badge outlier-high" style={{ fontSize: '0.7rem' }}>
-                        {item.candidate.outlierMultiplier}x
+                      <span className={`outlier-badge ${getOutlierBadgeClass(item.candidate.outlierMultiplier)}`} style={{ fontSize: '0.7rem' }}>
+                        {getOutlierTierLabel(item.candidate)}
                       </span>
                     </div>
 

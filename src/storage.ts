@@ -253,46 +253,105 @@ function normalizeVideoKey(urlOrId: string): string {
 }
 
 // ---------------------------------------------------------------------
-// 5. USER TARGET KEYWORDS MANAGEMENT
+// 5. BRAND PRESETS & USER TARGET KEYWORDS MANAGEMENT
 // ---------------------------------------------------------------------
-const DEFAULT_FALLBACK_KEYWORDS = [
+export const AHL_DEFAULT_KEYWORDS = [
   'hair system for men',
   'hair patch transformation',
   'non surgical hair replacement',
   'hair patch before and after',
-  'hair transplant alternative'
+  'hair transplant alternative',
+  'hair patch cost india',
+  'natural hairline patch men'
 ];
 
-export function getActiveKeywords(): string[] {
-  if (inMemoryStore.keywords) return inMemoryStore.keywords;
-  const list = safeReadJson<string[]>('keywords.json', DEFAULT_FALLBACK_KEYWORDS);
-  const result = Array.isArray(list) && list.length > 0 ? list : DEFAULT_FALLBACK_KEYWORDS;
-  inMemoryStore.keywords = result;
-  return result;
+export const ALCHEMANE_DEFAULT_KEYWORDS = [
+  'hair toppers for women',
+  'women hair thinning solution',
+  'clip in hair extensions natural',
+  'invisible hair patch women',
+  'hair topper transformation before after',
+  'crown hair loss female india',
+  'human hair extensions volume'
+];
+
+export interface BrandConfig {
+  activeBrand: 'AHL' | 'Alchemane';
+  ahlKeywords: string[];
+  alchemaneKeywords: string[];
 }
 
-export function saveActiveKeywords(keywords: string[]): void {
+export function getBrandConfig(): BrandConfig {
+  const fallback: BrandConfig = {
+    activeBrand: 'AHL',
+    ahlKeywords: AHL_DEFAULT_KEYWORDS,
+    alchemaneKeywords: ALCHEMANE_DEFAULT_KEYWORDS
+  };
+
+  const stored = safeReadJson<BrandConfig>('brand_config.json', fallback);
+  return {
+    activeBrand: stored.activeBrand || 'AHL',
+    ahlKeywords: Array.isArray(stored.ahlKeywords) && stored.ahlKeywords.length > 0 ? stored.ahlKeywords : AHL_DEFAULT_KEYWORDS,
+    alchemaneKeywords: Array.isArray(stored.alchemaneKeywords) && stored.alchemaneKeywords.length > 0 ? stored.alchemaneKeywords : ALCHEMANE_DEFAULT_KEYWORDS
+  };
+}
+
+export function saveBrandConfig(config: BrandConfig): void {
+  safeWriteJson('brand_config.json', config);
+}
+
+export function getActiveBrand(): 'AHL' | 'Alchemane' {
+  return getBrandConfig().activeBrand;
+}
+
+export function getActiveKeywords(): string[] {
+  const config = getBrandConfig();
+  return config.activeBrand === 'Alchemane' ? config.alchemaneKeywords : config.ahlKeywords;
+}
+
+export function switchActiveBrand(brand: 'AHL' | 'Alchemane'): { activeBrand: 'AHL' | 'Alchemane'; keywords: string[] } {
+  const config = getBrandConfig();
+  config.activeBrand = brand;
+  saveBrandConfig(config);
+  const keywords = brand === 'Alchemane' ? config.alchemaneKeywords : config.ahlKeywords;
   inMemoryStore.keywords = keywords;
-  safeWriteJson('keywords.json', keywords);
+  return { activeBrand: brand, keywords };
 }
 
 export function addCustomKeyword(keyword: string): string[] {
-  const current = getActiveKeywords();
+  const config = getBrandConfig();
   const trimmed = keyword.trim();
-  if (!trimmed) return current;
+  if (!trimmed) return getActiveKeywords();
 
-  const exists = current.some((k) => k.toLowerCase() === trimmed.toLowerCase());
+  const isAlchemane = config.activeBrand === 'Alchemane';
+  const targetList = isAlchemane ? config.alchemaneKeywords : config.ahlKeywords;
+  const exists = targetList.some((k) => k.toLowerCase() === trimmed.toLowerCase());
   if (!exists) {
-    current.push(trimmed);
-    saveActiveKeywords(current);
+    targetList.push(trimmed);
+    if (isAlchemane) {
+      config.alchemaneKeywords = targetList;
+    } else {
+      config.ahlKeywords = targetList;
+    }
+    saveBrandConfig(config);
   }
-  return current;
+  return targetList;
 }
 
 export function removeCustomKeyword(keyword: string): string[] {
-  const current = getActiveKeywords();
-  const filtered = current.filter((k) => k.toLowerCase() !== keyword.trim().toLowerCase());
-  const finalKeywords = filtered.length > 0 ? filtered : DEFAULT_FALLBACK_KEYWORDS;
-  saveActiveKeywords(finalKeywords);
+  const config = getBrandConfig();
+  const isAlchemane = config.activeBrand === 'Alchemane';
+  const targetList = isAlchemane ? config.alchemaneKeywords : config.ahlKeywords;
+  const defaultList = isAlchemane ? ALCHEMANE_DEFAULT_KEYWORDS : AHL_DEFAULT_KEYWORDS;
+
+  const filtered = targetList.filter((k) => k.toLowerCase() !== keyword.trim().toLowerCase());
+  const finalKeywords = filtered.length > 0 ? filtered : defaultList;
+
+  if (isAlchemane) {
+    config.alchemaneKeywords = finalKeywords;
+  } else {
+    config.ahlKeywords = finalKeywords;
+  }
+  saveBrandConfig(config);
   return finalKeywords;
 }

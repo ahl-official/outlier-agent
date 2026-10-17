@@ -1,5 +1,5 @@
 import { OutlierCandidate } from '../types';
-import { calculateOutlierScore } from '../scoring/outlier';
+import { calculateOutlierScore, deriveSOPTaxonomy } from '../scoring/outlier';
 
 const APIFY_BASE = 'https://api.apify.com/v2';
 const SEARCH_ACTOR = 'apify~instagram-search-scraper';
@@ -108,7 +108,16 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
       matchedKeyword: options.keyword,
       whyOutlier: score.whyOutlier,
       musicOrAudio: music,
-      formatType: detectReelFormat(caption)
+      formatType: detectReelFormat(caption),
+      sopTaxonomy: deriveSOPTaxonomy({
+        title: extractFirstLineHook(caption) || `Reel by @${item.ownerUsername || 'creator'}`,
+        caption,
+        multiplier: Math.round((playCount / Math.max(estimatedMedian, 100)) * 10) / 10,
+        formatType: detectReelFormat(caption),
+        likeCount: likesCount,
+        commentCount: commentsCount,
+        viewCount: playCount
+      })
     });
   }
 
@@ -181,7 +190,16 @@ export async function getInstagramReelByUrl(rawUrl: string): Promise<OutlierCand
     matchedKeyword: 'direct-url',
     whyOutlier: score.whyOutlier,
     musicOrAudio: item.musicInfo?.song_name || 'Original Audio',
-    formatType: detectReelFormat(caption)
+    formatType: detectReelFormat(caption),
+    sopTaxonomy: deriveSOPTaxonomy({
+      title: extractFirstLineHook(caption) || `Reel by @${item.ownerUsername || 'creator'}`,
+      caption,
+      multiplier: Math.round((playCount / estimatedMedian) * 10) / 10,
+      formatType: detectReelFormat(caption),
+      likeCount: item.likesCount || 0,
+      commentCount: item.commentsCount || 0,
+      viewCount: playCount
+    })
   };
 }
 

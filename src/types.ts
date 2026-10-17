@@ -16,6 +16,25 @@ export interface CreatorStats {
   }[];
 }
 
+export type BrandTarget = 'AHL' | 'Alchemane';
+
+export interface SOPTaxonomy {
+  outlierTier: 'Mega Outlier (10x+)' | 'Real Outlier (5x+)' | 'Notable Outlier (3x+)' | 'Emerging (<3x)';
+  topicTag: 'Transformation' | 'Taboo & Social Anxiety' | 'Myth-Busting' | 'Celebrity Moment' | 'Cost & Quality' | 'Maintenance & Routine';
+  formatTag: 'Before/After Reveal' | 'Talking Head Breakdown' | 'Reaction / Client Story' | 'Text-Led Reel';
+  primaryEmotion: 'Curiosity' | 'Shock / Surprise' | 'Relief' | 'Aspiration';
+  winningElement: 'Hook Mechanism' | 'Visual Format' | 'Core Topic';
+  adaptationPlays: {
+    winnerSummary: string;
+    ahlAngle: string;
+    ahlTone: string;
+    ahlTabooCheck: string;
+    alchemaneAngle: string;
+    alchemaneTone: string;
+    alchemaneTabooCheck: string;
+  };
+}
+
 export interface OutlierCandidate {
   id: string;
   platform: Platform;
@@ -38,6 +57,7 @@ export interface OutlierCandidate {
   musicOrAudio?: string;
   isShortOrReel: boolean;
   tags?: string[];
+  sopTaxonomy?: SOPTaxonomy;
 }
 
 export interface RealComment {
@@ -112,6 +132,8 @@ export interface DetailedOutlierBreakdown {
     engagementTrigger: string;
     algorithmSignal: string;
   };
+
+  sopTaxonomy?: SOPTaxonomy;
 
   createdAt: string;
 }

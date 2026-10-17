@@ -1,5 +1,5 @@
 import { OutlierCandidate, RealComment } from '../types';
-import { calculateOutlierScore } from '../scoring/outlier';
+import { calculateOutlierScore, deriveSOPTaxonomy } from '../scoring/outlier';
 
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 
@@ -142,7 +142,16 @@ export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Prom
       outlierScore: score.totalScore,
       matchedKeyword: options.keyword,
       whyOutlier: score.whyOutlier,
-      formatType: detectFormatType(cleanTitle, cleanDesc)
+      formatType: detectFormatType(cleanTitle, cleanDesc),
+      sopTaxonomy: deriveSOPTaxonomy({
+        title: cleanTitle,
+        caption: cleanDesc,
+        multiplier: Math.round((viewCount / Math.max(channelInfo.medianViews, 50)) * 10) / 10,
+        formatType: detectFormatType(cleanTitle, cleanDesc),
+        likeCount,
+        commentCount,
+        viewCount
+      })
     });
   }
 
@@ -217,7 +226,16 @@ export async function getYouTubeVideoByUrl(rawUrlOrId: string): Promise<OutlierC
     outlierScore: score.totalScore,
     matchedKeyword: 'direct-url',
     whyOutlier: score.whyOutlier,
-    formatType: detectFormatType(cleanTitle, cleanDesc)
+    formatType: detectFormatType(cleanTitle, cleanDesc),
+    sopTaxonomy: deriveSOPTaxonomy({
+      title: cleanTitle,
+      caption: cleanDesc,
+      multiplier: Math.round((viewCount / Math.max(channelInfo.medianViews, 50)) * 10) / 10,
+      formatType: detectFormatType(cleanTitle, cleanDesc),
+      likeCount,
+      commentCount,
+      viewCount
+    })
   };
 }
 

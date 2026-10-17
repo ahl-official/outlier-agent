@@ -1,5 +1,6 @@
 import { OutlierCandidate, DetailedOutlierBreakdown, RealComment } from '../types';
 import { getYouTubeVideoComments, extractYouTubeVideoId, decodeHtmlEntities } from '../providers/youtube';
+import { deriveSOPTaxonomy } from '../scoring/outlier';
 
 /**
  * Produces an accurate, deep diagnostic breakdown of a viral outlier video
@@ -112,6 +113,15 @@ export async function analyzeOutlierVideo(candidate: OutlierCandidate): Promise<
       inquiryThemes
     },
     whyOutlierDiagnosis,
+    sopTaxonomy: candidate.sopTaxonomy || deriveSOPTaxonomy({
+      title,
+      caption,
+      multiplier: mult,
+      formatType: candidate.formatType,
+      likeCount: candidate.likeCount,
+      commentCount: candidate.commentCount,
+      viewCount: candidate.viewCount
+    }),
     createdAt: new Date().toISOString()
   };
 }
