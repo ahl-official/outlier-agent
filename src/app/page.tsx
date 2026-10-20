@@ -1655,7 +1655,7 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
                           Click any frame to inspect high-res trigger
                         </span>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px' }}>
                         {currentBreakdown.aiAgentAudit.extractedFrames.map((frame, idx) => (
                           <div
                             key={idx}
@@ -1677,7 +1677,7 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
                               e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
                             }}
                           >
-                            <div style={{ position: 'relative', width: '100%', height: '90px', background: '#0a0a0a' }}>
+                            <div style={{ position: 'relative', width: '100%', height: '110px', background: '#0a0a0a' }}>
                               <img
                                 src={frame.dataUrl}
                                 alt={`FFmpeg Frame ${frame.index}`}
