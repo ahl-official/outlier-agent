@@ -91,7 +91,7 @@ export async function analyzeOutlierVideo(
       candidate.url,
       candidate.thumbnailUrl,
       candidate.id,
-      { maxFrames: 6, sampleDurationSeconds: 6 }
+      { maxFrames: 6, sampleDurationSeconds: 6, timeoutMs: 35000 }
     );
   } catch (err: any) {
     console.warn('[analyzeOutlierVideo] FFmpeg frame extraction note:', err.message);

@@ -25,7 +25,7 @@ export async function extractFramesWithFfmpeg(
 ): Promise<ExtractedVideoFrame[]> {
   const maxFrames = options?.maxFrames || 6;
   const sampleDuration = options?.sampleDurationSeconds || 6;
-  const timeoutMs = options?.timeoutMs || 15000;
+  const timeoutMs = options?.timeoutMs || 35000;
 
   const tempDir = path.join(os.tmpdir(), `outlier_ffmpeg_${Date.now()}_${Math.random().toString(36).substring(7)}`);
   await fs.promises.mkdir(tempDir, { recursive: true });
@@ -36,19 +36,24 @@ export async function extractFramesWithFfmpeg(
   // 1. Attempt rapid video clip download or direct stream URL via yt-dlp
   if (videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') || videoUrl.includes('instagram.com'))) {
     try {
-      // Approach A: Fast section download (b/worstvideo/worst handles VP9, AVC, DASH without container errors)
-      const ytDlpCmd = `yt-dlp --no-warnings --no-check-certificates --socket-timeout 8 --download-sections "*0-${sampleDuration}" -f "b/worstvideo/worst/bestvideo" -o "${tempClipPath}" --force-overwrites "${videoUrl}"`;
+      const isInstagram = videoUrl.includes('instagram.com');
+      // For Instagram: Do NOT pass --download-sections because Instagram CDN blocks FFmpeg HTTP clients with Error -138.
+      // yt-dlp downloads the whole 1-3MB reel in < 1 second directly, then local FFmpeg slices the frames.
+      // For YouTube: --download-sections works smoothly because YouTube CDN supports FFmpeg byte ranges.
+      const sectionArg = isInstagram ? '' : `--download-sections "*0-${sampleDuration}"`;
+      const ytDlpCmd = `yt-dlp --no-warnings --no-check-certificates --socket-timeout 15 ${sectionArg} -f "b/worstvideo/worst/bestvideo" -o "${tempClipPath}" --force-overwrites "${videoUrl}"`;
       await execAsync(ytDlpCmd, { timeout: timeoutMs });
       if (fs.existsSync(tempClipPath) && fs.statSync(tempClipPath).size > 1024) {
         clipDownloaded = true;
       }
     } catch (err: any) {
+      console.warn(`[FFmpeg] Fast section download failed, trying stream URL fallback: ${err.message}`);
       // Approach B: Resolve direct stream URL and pipe first seconds to ffmpeg
       try {
-        const streamUrlRes = await execAsync(`yt-dlp --no-warnings --no-check-certificates --socket-timeout 6 -g -f "worstvideo/b/worst" "${videoUrl}"`, { timeout: 8000 });
+        const streamUrlRes = await execAsync(`yt-dlp --no-warnings --no-check-certificates --socket-timeout 10 -g -f "worstvideo/b/worst" "${videoUrl}"`, { timeout: 20000 });
         const streamUrl = (streamUrlRes.stdout || '').trim().split('\n')[0];
         if (streamUrl && streamUrl.startsWith('http')) {
-          await execAsync(`ffmpeg -nostdin -ss 00:00:00 -i "${streamUrl}" -t ${sampleDuration} -c copy -y "${tempClipPath}"`, { timeout: 8000 });
+          await execAsync(`ffmpeg -nostdin -ss 00:00:00 -i "${streamUrl}" -t ${sampleDuration} -c copy -y "${tempClipPath}"`, { timeout: 15000 });
           if (fs.existsSync(tempClipPath) && fs.statSync(tempClipPath).size > 1024) {
             clipDownloaded = true;
           }
@@ -61,13 +66,13 @@ export async function extractFramesWithFfmpeg(
 
   const frameFiles: string[] = [];
 
-  // 2. Extract sequential frames from video clip if downloaded
+  // 2. Extract sequential genuine frames from the downloaded video clip
   if (clipDownloaded) {
     try {
       const framePattern = path.join(tempDir, 'frame_%02d.jpg');
-      // Extract 1 frame per second across the sample duration (produces 5-6 frames)
-      const ffmpegCmd = `ffmpeg -nostdin -i "${tempClipPath}" -vf "fps=1,scale=480:-1" -q:v 3 -y "${framePattern}"`;
-      await execAsync(ffmpegCmd, { timeout: 8000 });
+      // Extract 1 frame per second across the sample duration (produces 5-6 real frames)
+      const ffmpegCmd = `ffmpeg -nostdin -i "${tempClipPath}" -vf "fps=1,scale=480:-1" -frames:v ${maxFrames} -q:v 3 -y "${framePattern}"`;
+      await execAsync(ffmpegCmd, { timeout: 15000 });
 
       const files = (await fs.promises.readdir(tempDir))
         .filter((f) => f.startsWith('frame_') && f.endsWith('.jpg'))
@@ -77,66 +82,47 @@ export async function extractFramesWithFfmpeg(
         frameFiles.push(path.join(tempDir, f));
       }
     } catch (err: any) {
-      console.warn(`[FFmpeg] Clip extraction failed, will attempt fallback: ${err.message}`);
+      console.warn(`[FFmpeg] Video frame extraction failed: ${err.message}`);
     }
   }
 
-  // 3. Resilient Multi-Frame Fallback (e.g. for Instagram Reels where direct video download is restricted)
-  // Generates 5 sequential perspective slices: Full Hook, Zoomed Insecurity Center, Scalp Texture Macro, Framing Lower-Third, Climax Focus
-  if (frameFiles.length < 3 && thumbnailUrl && thumbnailUrl.startsWith('http')) {
+  // 3. Direct FFmpeg stream extraction if videoUrl is a direct media file (.mp4, .m3u8)
+  if (frameFiles.length === 0 && videoUrl && (videoUrl.endsWith('.mp4') || videoUrl.endsWith('.m3u8') || videoUrl.includes('blob:'))) {
     try {
-      const tempThumbPath = path.join(tempDir, 'thumb_source.jpg');
-      const thumbRes = await fetch(thumbnailUrl);
-      if (thumbRes.ok) {
-        const arrayBuf = await thumbRes.arrayBuffer();
-        await fs.promises.writeFile(tempThumbPath, Buffer.from(arrayBuf));
+      const framePattern = path.join(tempDir, 'direct_frame_%02d.jpg');
+      await execAsync(
+        `ffmpeg -nostdin -ss 00:00:00 -i "${videoUrl}" -t ${sampleDuration} -vf "fps=1,scale=480:-1" -frames:v ${maxFrames} -q:v 3 "${framePattern}"`,
+        { timeout: 15000 }
+      );
+      const files = (await fs.promises.readdir(tempDir))
+        .filter((f) => f.startsWith('direct_frame_') && f.endsWith('.jpg'))
+        .sort();
 
-        const cuts = [
-          { name: 'frame_f1.jpg', filter: 'scale=480:-1' },
-          { name: 'frame_f2.jpg', filter: 'crop=in_w*0.85:in_h*0.85:in_w*0.075:in_h*0.075,scale=480:-1' },
-          { name: 'frame_f3.jpg', filter: 'crop=in_w*0.65:in_h*0.65:in_w*0.175:in_h*0.1,scale=480:-1' },
-          { name: 'frame_f4.jpg', filter: 'crop=in_w*0.5:in_h*0.5:in_w*0.25:in_h*0.25,scale=480:-1' },
-          { name: 'frame_f5.jpg', filter: 'crop=in_w*0.7:in_h*0.7:in_w*0.15:in_h*0.2,scale=480:-1' }
-        ];
-
-        for (const cut of cuts) {
-          const outPath = path.join(tempDir, cut.name);
-          try {
-            await execAsync(`ffmpeg -nostdin -i "${tempThumbPath}" -vf "${cut.filter}" -q:v 3 -y "${outPath}"`);
-            if (fs.existsSync(outPath)) {
-              frameFiles.push(outPath);
-            }
-          } catch (e) {
-            // Ignore single cut failure
-          }
-        }
+      for (const f of files.slice(0, maxFrames)) {
+        frameFiles.push(path.join(tempDir, f));
       }
     } catch (err: any) {
-      console.warn(`[FFmpeg] Multi-frame fallback error: ${err.message}`);
+      console.warn(`[FFmpeg] Direct stream error: ${err.message}`);
     }
   }
 
-  // 4. Absolute Zero-Dependency Fallback: If FFmpeg binary is missing, generate 4 sequential inspection angles from buffer
+  // 4. Honest Fallback: NO FAKE / CROPPED FRAMES.
+  // If the video stream is blocked, private, or unreachable, return only 1 genuine cover thumbnail
+  // clearly marked so the user and AI know it is a static thumbnail, not video frames.
   if (frameFiles.length === 0 && thumbnailUrl && thumbnailUrl.startsWith('http')) {
     try {
       const res = await fetch(thumbnailUrl);
       if (res.ok) {
         const buf = Buffer.from(await res.arrayBuffer());
         const dataUrl = `data:image/jpeg;base64,${buf.toString('base64')}`;
-        const fallbackLabels = [
-          { ts: '00:00', label: '00:00 (Visual Hook Keyframe)', trigger: 'Primary thumb-stop pattern interrupt' },
-          { ts: '00:01', label: '00:01 (Micro-Tension Trigger)', trigger: 'Problem exposure & curiosity gap' },
-          { ts: '00:03', label: '00:03 (Tactile Realism Proof)', trigger: 'Direct daylight parting / application' },
-          { ts: '00:05', label: '00:05 (Transformation Climax)', trigger: 'Emotional payoff & replay loop' }
-        ];
-        return fallbackLabels.map((fl, i) => ({
-          index: i + 1,
-          timestamp: fl.ts,
+        return [{
+          index: 1,
+          timestamp: '00:00',
           dataUrl,
-          label: fl.label,
-          visualTrigger: fl.trigger,
-          retentionScore: 98 - i * 2
-        }));
+          label: '00:00 (Cover Thumbnail - Video Stream Unreachable)',
+          visualTrigger: 'Platform cover image (stream blocked or private)',
+          retentionScore: 90
+        }];
       }
     } catch (e) {
       // Ignore

@@ -1593,8 +1593,10 @@ export default function HomePage() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '0.74rem', background: 'rgba(6, 182, 212, 0.15)', color: 'var(--cyan-400)', border: '1px solid rgba(6, 182, 212, 0.4)', padding: '3px 10px', borderRadius: '9999px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--cyan-400)', display: 'inline-block' }} />
-                        🎬 {currentBreakdown.aiAgentAudit?.extractedFrames?.length || 6} Frames (FFmpeg)
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: (currentBreakdown.aiAgentAudit?.extractedFrames?.length || 0) > 1 ? 'var(--cyan-400)' : 'var(--gold-400)', display: 'inline-block' }} />
+                        🎬 {(currentBreakdown.aiAgentAudit?.extractedFrames?.length || 0) > 1 
+                          ? `${currentBreakdown.aiAgentAudit?.extractedFrames?.length} Frames (FFmpeg)` 
+                          : '1 Cover Frame (Direct Stream Restricted)'}
                       </span>
                       <span style={{ fontSize: '0.74rem', background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)', padding: '3px 10px', borderRadius: '9999px', fontWeight: 700 }}>
                         🤖 {currentBreakdown.aiAgentAudit?.agentModel || 'Gemini Social Media Director'}
@@ -1649,7 +1651,9 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                         <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <Layers size={14} color="var(--cyan-400)" />
-                          Sequential FFmpeg Extracted Frames ({currentBreakdown.aiAgentAudit.extractedFrames.length} Analyzed)
+                          {currentBreakdown.aiAgentAudit.extractedFrames.length > 1
+                            ? `Sequential FFmpeg Extracted Frames (${currentBreakdown.aiAgentAudit.extractedFrames.length} Analyzed)`
+                            : `Platform Cover Poster Frame (Direct video stream restricted by platform)`}
                         </span>
                         <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
                           Click any frame to inspect high-res trigger
