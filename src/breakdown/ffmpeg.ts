@@ -36,16 +36,16 @@ export async function extractFramesWithFfmpeg(
   // 1. Attempt rapid video clip download or direct stream URL via yt-dlp
   if (videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') || videoUrl.includes('instagram.com'))) {
     try {
-      // Approach A: Fast section download
-      const ytDlpCmd = `yt-dlp --no-warnings --no-check-certificates --socket-timeout 6 --download-sections "*0-${sampleDuration}" -f "b/worstvideo[ext=mp4]/worst[ext=mp4]/worst" -o "${tempClipPath}" --force-overwrites "${videoUrl}"`;
+      // Approach A: Fast section download (b/worstvideo/worst handles VP9, AVC, DASH without container errors)
+      const ytDlpCmd = `yt-dlp --no-warnings --no-check-certificates --socket-timeout 8 --download-sections "*0-${sampleDuration}" -f "b/worstvideo/worst/bestvideo" -o "${tempClipPath}" --force-overwrites "${videoUrl}"`;
       await execAsync(ytDlpCmd, { timeout: timeoutMs });
       if (fs.existsSync(tempClipPath) && fs.statSync(tempClipPath).size > 1024) {
         clipDownloaded = true;
       }
     } catch (err: any) {
-      // Approach B: Resolve direct stream URL and pipe first 5 seconds to ffmpeg
+      // Approach B: Resolve direct stream URL and pipe first seconds to ffmpeg
       try {
-        const streamUrlRes = await execAsync(`yt-dlp --no-warnings --no-check-certificates --socket-timeout 5 -g -f "b/worst[ext=mp4]/worst" "${videoUrl}"`, { timeout: 8000 });
+        const streamUrlRes = await execAsync(`yt-dlp --no-warnings --no-check-certificates --socket-timeout 6 -g -f "worstvideo/b/worst" "${videoUrl}"`, { timeout: 8000 });
         const streamUrl = (streamUrlRes.stdout || '').trim().split('\n')[0];
         if (streamUrl && streamUrl.startsWith('http')) {
           await execAsync(`ffmpeg -nostdin -ss 00:00:00 -i "${streamUrl}" -t ${sampleDuration} -c copy -y "${tempClipPath}"`, { timeout: 8000 });

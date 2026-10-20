@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
         cachedEntry.breakdown &&
         cachedEntry.breakdown.deepVisualAnalysis &&
         cachedEntry.breakdown.aiAgentAudit?.extractedFrames &&
-        cachedEntry.breakdown.aiAgentAudit.extractedFrames.length > 0
+        cachedEntry.breakdown.aiAgentAudit.extractedFrames.length >= 4
       ) {
         return NextResponse.json({
           success: true,
