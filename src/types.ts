@@ -50,6 +50,7 @@ export interface OutlierCandidate {
   durationSeconds?: number;
   creator: CreatorStats;
   outlierMultiplier: number; // views / creator.medianViews
+  viewToFollowerRatio?: number; // views / creator.subscriberOrFollowerCount (Viral Reach Ratio)
   outlierScore: number;      // composite 0-100 score
   matchedKeyword: string;
   formatType?: 'face-cam' | 'before-after' | 'transformation' | 'text-overlay' | 'pov' | 'unknown';
@@ -67,6 +68,33 @@ export interface RealComment {
   text: string;
   likeCount: number;
   publishedAt: string;
+}
+
+export interface ExtractedVideoFrame {
+  index: number;
+  timestamp: string;
+  dataUrl: string;
+  label?: string;
+  visualTrigger?: string;
+  retentionScore?: number;
+}
+
+export interface AIAgentAudit {
+  status: 'ai_analyzed' | 'heuristic_engine' | 'ffmpeg_multimodal_analyzed';
+  agentModel?: string;
+  systemPrompt?: string;
+  winningElement?: string;
+  theOneOutlierThing?: string;
+  framesExtractedCount?: number;
+  extractedFrames?: ExtractedVideoFrame[];
+  frameHighlights?: {
+    frameIndex: number;
+    timestamp: string;
+    visualTrigger: string;
+    retentionScore: number;
+  }[];
+  rawInsights?: string;
+  timestamp: string;
 }
 
 export interface DetailedOutlierBreakdown {
@@ -133,6 +161,47 @@ export interface DetailedOutlierBreakdown {
     algorithmSignal: string;
   };
 
+  deepVisualAnalysis?: {
+    winningVisualHook: {
+      whatIsShown: string;
+      cameraAngleAndFraming: string;
+      exactTiming: string;
+      howTheyUsedIt: string;
+      whyItStopsTheScroll: string;
+    };
+    audioAndMusicStrategy: {
+      trackName: string;
+      audioType: 'Trending Viral Audio' | 'Original Voiceover + BGM' | 'Tactile ASMR Sound Design' | 'Meme Audio Loop';
+      syncMomentWithVisuals: string;
+      trendingStatus: string;
+      soundRecommendationForBrand: string;
+    };
+    frameByFrameTimeline: {
+      timestamp: string;
+      phase: string;
+      visualAction: string;
+      cameraFraming: string;
+      soundSync: string;
+      whyItWorked: string;
+    }[];
+  };
+
+  strategistVerdict?: {
+    executiveVerdict: string;
+    theUnfairAdvantage: string;
+    psychologicalTrigger: string;
+    viralScoreOut100: number;
+    remakePlaybook: {
+      exactOpeningShot: string;
+      pacingRule: string;
+      mustKeepVisuals: string[];
+      whatToChangeForBrand: string[];
+      callToActionScript: string;
+    };
+  };
+
+  aiAgentAudit?: AIAgentAudit;
+
   sopTaxonomy?: SOPTaxonomy;
 
   createdAt: string;
@@ -163,4 +232,8 @@ export interface RadarSearchParams {
   minMultiplier?: number;
   maxDaysOld?: number;
   limitPerKeyword?: number;
+  minViews?: number;
+  minFollowers?: number;
+  minFollowerRatio?: number;
 }
+

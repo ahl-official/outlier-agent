@@ -19,8 +19,9 @@ export function calculateOutlierScore(params: {
   likeCount: number;
   commentCount: number;
   titleOrCaption: string;
+  followerCount?: number;
 }): ScoreBreakdown {
-  const { viewCount, medianViews, publishedAt, likeCount, commentCount, titleOrCaption } = params;
+  const { viewCount, medianViews, publishedAt, likeCount, commentCount, titleOrCaption, followerCount } = params;
 
   // 1. Multiplier (Views / Creator Median)
   const safeMedian = Math.max(medianViews || 0, 100);
@@ -28,7 +29,6 @@ export function calculateOutlierScore(params: {
   const multiplier = Math.round(rawMultiplier * 10) / 10;
 
   // Multiplier score (max 50 points)
-  // Multipliers >= 10x get top points; 2x is minimum notable outlier
   let multiplierScore = 0;
   if (multiplier >= 20) {
     multiplierScore = 50;
@@ -40,6 +40,24 @@ export function calculateOutlierScore(params: {
     multiplierScore = 15 + (multiplier - 2) * 5;
   } else if (multiplier >= 1.2) {
     multiplierScore = 5 + (multiplier - 1.2) * 12.5;
+  }
+
+  // 1b. Follower Reach Multiplier (Views / Follower Count)
+  // 500k views on a 20k account = 25x (Super Outlier)
+  // 500k views on a 5M account = 0.1x (Underperforming giant account)
+  const safeFollowers = Math.max(followerCount || 0, 0);
+  const followerRatio = safeFollowers > 0 ? Math.round((viewCount / safeFollowers) * 10) / 10 : 0;
+  let followerBonus = 0;
+  if (followerRatio >= 20) {
+    followerBonus = 15; // Viral explosion beyond follower base
+  } else if (followerRatio >= 10) {
+    followerBonus = 12;
+  } else if (followerRatio >= 5) {
+    followerBonus = 8;
+  } else if (followerRatio >= 2) {
+    followerBonus = 4;
+  } else if (followerRatio > 0 && followerRatio < 0.2) {
+    followerBonus = -12; // Massive account getting low views is NOT a true outlier
   }
 
   // 2. Freshness Score (max 20 points)
@@ -107,16 +125,20 @@ export function calculateOutlierScore(params: {
 
   shootabilityScore = Math.min(15, shootabilityScore);
 
-  const totalScore = Math.min(100, Math.round(multiplierScore + freshnessScore + engagementScore + shootabilityScore));
+  const totalScore = Math.max(1, Math.min(100, Math.round(multiplierScore + freshnessScore + engagementScore + shootabilityScore + followerBonus)));
 
   // Synthesize concise reason
   let reason = '';
-  if (multiplier >= 5) {
+  if (followerRatio >= 3 && followerCount && followerCount > 0) {
+    const formattedViews = viewCount >= 1000000 ? `${(viewCount / 1000000).toFixed(1)}M` : `${Math.round(viewCount / 1000)}k`;
+    const formattedFollowers = followerCount >= 1000000 ? `${(followerCount / 1000000).toFixed(1)}M` : `${Math.round(followerCount / 1000)}k`;
+    reason = `🚀 ${followerRatio}x Reach (${formattedViews} views on ${formattedFollowers} account) • ${multiplier}x baseline`;
+  } else if (multiplier >= 5) {
     reason = `${multiplier}x creator baseline (${viewCount.toLocaleString()} vs ~${safeMedian.toLocaleString()} median)`;
   } else if (daysOld <= 5) {
     reason = `Fresh breakout (${Math.round(daysOld)}d old) at ${multiplier}x baseline with strong velocity`;
   } else {
-    reason = `${multiplier}x creator views with active comment engagement`;
+    reason = `${multiplier}x creator views (${followerRatio > 0 ? followerRatio + 'x followers' : 'active engagement'})`;
   }
 
   return {

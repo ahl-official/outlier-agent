@@ -257,28 +257,19 @@ function normalizeVideoKey(urlOrId: string): string {
   return urlOrId.trim().toLowerCase().replace(/\/$/, '');
 }
 
+import { 
+  AHL_SPECIFIC_KEYWORDS, 
+  ALCHEMANE_SPECIFIC_KEYWORDS, 
+  AHL_CATEGORY_GROUPS, 
+  ALCHEMANE_CATEGORY_GROUPS,
+  KeywordGroup 
+} from './keywords';
+
 // ---------------------------------------------------------------------
 // 5. BRAND PRESETS & USER TARGET KEYWORDS MANAGEMENT
 // ---------------------------------------------------------------------
-export const AHL_DEFAULT_KEYWORDS = [
-  'hair system for men',
-  'hair patch transformation',
-  'non surgical hair replacement',
-  'hair patch before and after',
-  'hair transplant alternative',
-  'hair patch cost india',
-  'natural hairline patch men'
-];
-
-export const ALCHEMANE_DEFAULT_KEYWORDS = [
-  'hair toppers for women',
-  'women hair thinning solution',
-  'clip in hair extensions natural',
-  'invisible hair patch women',
-  'hair topper transformation before after',
-  'crown hair loss female india',
-  'human hair extensions volume'
-];
+export const AHL_DEFAULT_KEYWORDS = AHL_SPECIFIC_KEYWORDS;
+export const ALCHEMANE_DEFAULT_KEYWORDS = ALCHEMANE_SPECIFIC_KEYWORDS;
 
 export interface BrandConfig {
   activeBrand: 'AHL' | 'Alchemane';
@@ -314,13 +305,19 @@ export function getActiveKeywords(): string[] {
   return config.activeBrand === 'Alchemane' ? config.alchemaneKeywords : config.ahlKeywords;
 }
 
-export function switchActiveBrand(brand: 'AHL' | 'Alchemane'): { activeBrand: 'AHL' | 'Alchemane'; keywords: string[] } {
+export function getActiveCategoryGroups(): KeywordGroup[] {
+  const brand = getActiveBrand();
+  return brand === 'Alchemane' ? ALCHEMANE_CATEGORY_GROUPS : AHL_CATEGORY_GROUPS;
+}
+
+export function switchActiveBrand(brand: 'AHL' | 'Alchemane'): { activeBrand: 'AHL' | 'Alchemane'; keywords: string[]; categoryGroups: KeywordGroup[] } {
   const config = getBrandConfig();
   config.activeBrand = brand;
   saveBrandConfig(config);
   const keywords = brand === 'Alchemane' ? config.alchemaneKeywords : config.ahlKeywords;
+  const categoryGroups = brand === 'Alchemane' ? ALCHEMANE_CATEGORY_GROUPS : AHL_CATEGORY_GROUPS;
   inMemoryStore.keywords = keywords;
-  return { activeBrand: brand, keywords };
+  return { activeBrand: brand, keywords, categoryGroups };
 }
 
 export function addCustomKeyword(keyword: string): string[] {

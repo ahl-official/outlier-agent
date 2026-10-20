@@ -97,6 +97,8 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
   margin-bottom: 28px;
   padding-bottom: 20px;
   border-bottom: 1px solid var(--border-subtle);
@@ -138,11 +140,13 @@ h1, h2, h3, h4, h5, h6 {
 /* Navigation Tabs */
 .nav-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   background: rgba(12, 18, 32, 0.8);
   padding: 6px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .nav-tab-btn {
@@ -462,8 +466,8 @@ h1, h2, h3, h4, h5, h6 {
 
 .card-stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
   background: rgba(0, 0, 0, 0.25);
   padding: 8px 10px;
   border-radius: var(--radius-sm);
@@ -611,5 +615,41 @@ h1, h2, h3, h4, h5, h6 {
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+/* Radar Filter Select Styling */
+.radar-filter-select {
+  transition: all 0.2s ease;
+  outline: none;
+}
+.radar-filter-select:hover {
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+.radar-filter-select:focus {
+  border-color: var(--gold-400) !important;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.25);
+}
+
+/* Global Responsive Rules */
+@media (max-width: 900px) {
+  .app-container {
+    padding: 16px 16px 60px 16px;
+  }
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .nav-tabs {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .nav-tab-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .brand-title {
+    font-size: 1.6rem;
   }
 }

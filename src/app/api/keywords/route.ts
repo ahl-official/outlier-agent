@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getActiveKeywords, getActiveBrand, switchActiveBrand, addCustomKeyword, removeCustomKeyword } from '@/storage';
+import { 
+  getActiveKeywords, 
+  getActiveBrand, 
+  switchActiveBrand, 
+  addCustomKeyword, 
+  removeCustomKeyword,
+  getActiveCategoryGroups
+} from '@/storage';
 
 export async function GET() {
   const brand = getActiveBrand();
   const keywords = getActiveKeywords();
-  return NextResponse.json({ brand, keywords });
+  const categoryGroups = getActiveCategoryGroups();
+  return NextResponse.json({ brand, keywords, categoryGroups });
 }
 
 export async function POST(req: NextRequest) {
@@ -17,7 +25,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Brand must be AHL or Alchemane' }, { status: 400 });
       }
       const result = switchActiveBrand(brand);
-      return NextResponse.json({ success: true, brand: result.activeBrand, keywords: result.keywords });
+      return NextResponse.json({ 
+        success: true, 
+        brand: result.activeBrand, 
+        keywords: result.keywords,
+        categoryGroups: result.categoryGroups
+      });
     }
 
     if (!keyword || typeof keyword !== 'string') {

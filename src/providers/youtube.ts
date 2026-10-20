@@ -21,6 +21,8 @@ export interface YouTubeSearchOptions {
   maxResults?: number;
   publishedAfterDays?: number;
   videoDuration?: 'short' | 'any';
+  minViews?: number;
+  minSubscribers?: number;
 }
 
 function getApiKey(): string {
@@ -36,18 +38,23 @@ function getApiKey(): string {
  */
 export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Promise<OutlierCandidate[]> {
   const apiKey = getApiKey();
-  const maxResults = options.maxResults || 8;
-  const days = options.publishedAfterDays || 14;
+  const maxResults = options.maxResults || 15;
+  const days = options.publishedAfterDays || 30;
+  const minViews = typeof options.minViews === 'number' ? options.minViews : 100_000;
+  const minSubscribers = typeof options.minSubscribers === 'number' ? options.minSubscribers : 14_000;
 
   const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  // 1. Search videos
+  // 1. Search videos: if searching for high view outliers (lakhs/millions), prioritize viewCount order
+  const searchOrder = minViews >= 100_000 ? 'viewCount' : 'relevance';
   const searchUrl = new URL(`${YOUTUBE_API_BASE}/search`);
   searchUrl.searchParams.set('part', 'snippet');
   searchUrl.searchParams.set('q', options.keyword);
   searchUrl.searchParams.set('type', 'video');
-  searchUrl.searchParams.set('order', 'relevance');
-  searchUrl.searchParams.set('publishedAfter', publishedAfter);
+  searchUrl.searchParams.set('order', searchOrder);
+  if (options.publishedAfterDays) {
+    searchUrl.searchParams.set('publishedAfter', publishedAfter);
+  }
   searchUrl.searchParams.set('maxResults', String(maxResults));
   if (options.videoDuration) {
     searchUrl.searchParams.set('videoDuration', options.videoDuration);
@@ -93,6 +100,17 @@ export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Prom
     };
 
     const viewCount = details ? parseInt(details.statistics?.viewCount || '0', 10) : 0;
+
+    // Filter by minViews (must be in Lakhs or Millions, e.g. >= 100k)
+    if (minViews > 0 && viewCount < minViews) {
+      continue;
+    }
+
+    // Filter by creator audience size (must be > 14k subscribers)
+    if (minSubscribers > 0 && channelInfo.subCount < minSubscribers) {
+      continue;
+    }
+
     const likeCount = details ? parseInt(details.statistics?.likeCount || '0', 10) : 0;
     const commentCount = details ? parseInt(details.statistics?.commentCount || '0', 10) : 0;
     const durationIso = details?.contentDetails?.duration || '';
@@ -109,10 +127,14 @@ export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Prom
       publishedAt: snippet.publishedAt,
       likeCount,
       commentCount,
-      titleOrCaption: `${cleanTitle} ${cleanDesc}`
+      titleOrCaption: `${cleanTitle} ${cleanDesc}`,
+      followerCount: channelInfo.subCount
     });
 
     const thumbnailUrl = snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || '';
+    const viewToFollowerRatio = channelInfo.subCount > 0
+      ? Math.round((viewCount / channelInfo.subCount) * 10) / 10
+      : 0;
 
     candidates.push({
       id: `yt_${videoId}`,
@@ -139,6 +161,7 @@ export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Prom
         recentUploads: channelInfo.recentUploads
       },
       outlierMultiplier: Math.round((viewCount / Math.max(channelInfo.medianViews, 50)) * 10) / 10,
+      viewToFollowerRatio,
       outlierScore: score.totalScore,
       matchedKeyword: options.keyword,
       whyOutlier: score.whyOutlier,
@@ -189,13 +212,18 @@ export async function getYouTubeVideoByUrl(rawUrlOrId: string): Promise<OutlierC
   const cleanTitle = decodeHtmlEntities(snippet.title || '');
   const cleanDesc = decodeHtmlEntities(snippet.description || '');
 
+  const viewToFollowerRatio = channelInfo.subCount > 0
+    ? Math.round((viewCount / channelInfo.subCount) * 10) / 10
+    : 0;
+
   const score = calculateOutlierScore({
     viewCount,
     medianViews: channelInfo.medianViews,
     publishedAt: snippet.publishedAt,
     likeCount,
     commentCount,
-    titleOrCaption: `${cleanTitle} ${cleanDesc}`
+    titleOrCaption: `${cleanTitle} ${cleanDesc}`,
+    followerCount: channelInfo.subCount
   });
 
   return {
@@ -223,6 +251,7 @@ export async function getYouTubeVideoByUrl(rawUrlOrId: string): Promise<OutlierC
       recentUploads: channelInfo.recentUploads
     },
     outlierMultiplier: Math.round((viewCount / Math.max(channelInfo.medianViews, 50)) * 10) / 10,
+    viewToFollowerRatio,
     outlierScore: score.totalScore,
     matchedKeyword: 'direct-url',
     whyOutlier: score.whyOutlier,

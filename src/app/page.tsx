@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Radar, 
   Flame, 
@@ -31,10 +31,16 @@ import {
   Music,
   User,
   HelpCircle,
-  AlertCircle
+  AlertCircle,
+  SlidersHorizontal
 } from 'lucide-react';
 import { OutlierCandidate, DetailedOutlierBreakdown, BoardItem, BoardStatus } from '@/types';
-import { DEFAULT_RADAR_KEYWORDS } from '@/keywords';
+import { 
+  DEFAULT_RADAR_KEYWORDS, 
+  KeywordGroup, 
+  AHL_CATEGORY_GROUPS, 
+  ALCHEMANE_CATEGORY_GROUPS 
+} from '@/keywords';
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<'radar' | 'breakdown' | 'board'>('radar');
@@ -42,20 +48,51 @@ export default function HomePage() {
   // Radar state
   const [keywordList, setKeywordList] = useState<string[]>(DEFAULT_RADAR_KEYWORDS);
   const [selectedKeyword, setSelectedKeyword] = useState<string>(DEFAULT_RADAR_KEYWORDS[0]);
+  const [categoryGroups, setCategoryGroups] = useState<KeywordGroup[]>(AHL_CATEGORY_GROUPS);
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [customKeyword, setCustomKeyword] = useState<string>('');
   const [isAddingKeyword, setIsAddingKeyword] = useState<boolean>(false);
   const [newKeywordInput, setNewKeywordInput] = useState<string>('');
   const [selectedPlatform, setSelectedPlatform] = useState<'all' | 'youtube' | 'instagram'>('all');
   const [minMultiplier, setMinMultiplier] = useState<number>(0);
+  const [minViews, setMinViews] = useState<number>(100_000); // 1 Lakh+ default
+  const [minFollowers, setMinFollowers] = useState<number>(14_000); // >14k default
+  const [minFollowerRatio, setMinFollowerRatio] = useState<number>(0); // 0 = Any reach ratio
   const [radarCandidates, setRadarCandidates] = useState<OutlierCandidate[]>([]);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanMessage, setScanMessage] = useState<string>('');
+
+  // Real-time client-side filtered candidates based on active Reach Ratio & View thresholds
+  const filteredCandidates = useMemo(() => {
+    return radarCandidates.filter((c) => {
+      // 1. Follower reach ratio filter (Views / Followers or Subs)
+      if (minFollowerRatio > 0) {
+        const ratio = c.viewToFollowerRatio ?? (
+          c.creator?.subscriberOrFollowerCount && c.creator.subscriberOrFollowerCount > 0
+            ? c.viewCount / c.creator.subscriberOrFollowerCount
+            : 0
+        );
+        if (ratio < minFollowerRatio) return false;
+      }
+      // 2. Minimum views threshold
+      if (minViews > 0 && c.viewCount < minViews) return false;
+      // 3. Minimum creator followers threshold
+      if (minFollowers > 0 && (c.creator?.subscriberOrFollowerCount || 0) < minFollowers) return false;
+      // 4. Minimum multiplier threshold
+      if (minMultiplier > 0 && c.outlierMultiplier < minMultiplier) return false;
+      return true;
+    });
+  }, [radarCandidates, minFollowerRatio, minViews, minFollowers, minMultiplier]);
 
   // Breakdown state
   const [breakdownUrl, setBreakdownUrl] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [currentBreakdown, setCurrentBreakdown] = useState<DetailedOutlierBreakdown | null>(null);
   const [currentCandidate, setCurrentCandidate] = useState<OutlierCandidate | null>(null);
+  const [aiApiKey, setAiApiKey] = useState<string>('');
+  const [showAiKeyInput, setShowAiKeyInput] = useState<boolean>(false);
+  const [selectedFramePreview, setSelectedFramePreview] = useState<{ dataUrl: string; label?: string; visualTrigger?: string; timestamp?: string } | null>(null);
+  const [showSystemPrompt, setShowSystemPrompt] = useState<boolean>(false);
 
   // Brand context state: AHL vs Alchemane
   const [currentBrand, setCurrentBrand] = useState<'AHL' | 'Alchemane'>('AHL');
@@ -86,6 +123,11 @@ export default function HomePage() {
       if (data.brand) {
         setCurrentBrand(data.brand);
       }
+      if (data.categoryGroups && Array.isArray(data.categoryGroups) && data.categoryGroups.length > 0) {
+        setCategoryGroups(data.categoryGroups);
+      } else {
+        setCategoryGroups(data.brand === 'Alchemane' ? ALCHEMANE_CATEGORY_GROUPS : AHL_CATEGORY_GROUPS);
+      }
       if (data.keywords && Array.isArray(data.keywords) && data.keywords.length > 0) {
         setKeywordList(data.keywords);
         if (!selectedKeyword || !data.keywords.includes(selectedKeyword)) {
@@ -109,6 +151,12 @@ export default function HomePage() {
       if (data.success && data.keywords) {
         setCurrentBrand(newBrand);
         setKeywordList(data.keywords);
+        if (data.categoryGroups && Array.isArray(data.categoryGroups)) {
+          setCategoryGroups(data.categoryGroups);
+        } else {
+          setCategoryGroups(newBrand === 'Alchemane' ? ALCHEMANE_CATEGORY_GROUPS : AHL_CATEGORY_GROUPS);
+        }
+        setSelectedCategory('All');
         setSelectedKeyword(data.keywords[0] || '');
         setCustomKeyword('');
         showToast(`Switched brand focus to: ${newBrand === 'AHL' ? 'American Hairline (Men)' : 'Alchemane (Women)'}`);
@@ -217,7 +265,10 @@ export default function HomePage() {
         body: JSON.stringify({
           keywords: [kw],
           platform: selectedPlatform,
-          minMultiplier
+          minMultiplier,
+          minViews,
+          minFollowers,
+          minFollowerRatio
         })
       });
 
@@ -245,6 +296,9 @@ export default function HomePage() {
 
     setIsAnalyzing(true);
     setActiveTab('breakdown');
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
     if (candidateToUse) {
       setCurrentCandidate(candidateToUse);
       setBreakdownUrl(candidateToUse.url);
@@ -256,7 +310,9 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: targetUrl,
-          candidateId: candidateToUse?.id
+          candidateId: candidateToUse?.id,
+          aiApiKey: aiApiKey.trim() || undefined,
+          forceRefresh: true
         })
       });
 
@@ -266,7 +322,7 @@ export default function HomePage() {
         if (data.candidate) {
           setCurrentCandidate(data.candidate);
         }
-        showToast('Deep Outlier Intelligence loaded!');
+        showToast('Deep Frame-by-Frame & Strategist Intelligence Loaded!');
       } else {
         showToast(data.error || 'Could not analyze video');
       }
@@ -451,11 +507,71 @@ export default function HomePage() {
         <main>
           {/* Controls Bar */}
           <div className="glass-panel" style={{ padding: '24px', marginBottom: '24px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Company Filter Row */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', paddingBottom: '14px', borderBottom: '1px solid var(--border-subtle)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    🏢 Company Filter:
+                  </span>
+                  <div style={{ display: 'inline-flex', background: 'rgba(0, 0, 0, 0.4)', padding: '3px', borderRadius: '10px', border: '1px solid var(--border-highlight)' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchBrand('AHL')}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px 16px',
+                        borderRadius: '7px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '0.84rem',
+                        fontWeight: 700,
+                        transition: 'all 0.2s',
+                        background: currentBrand === 'AHL' ? 'var(--gold-400)' : 'transparent',
+                        color: currentBrand === 'AHL' ? '#000' : 'var(--text-muted)'
+                      }}
+                    >
+                      💈 American Hairline (Men)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchBrand('Alchemane')}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px 16px',
+                        borderRadius: '7px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '0.84rem',
+                        fontWeight: 700,
+                        transition: 'all 0.2s',
+                        background: currentBrand === 'Alchemane' ? '#f472b6' : 'transparent',
+                        color: currentBrand === 'Alchemane' ? '#000' : 'var(--text-muted)'
+                      }}
+                    >
+                      ✨ Alchemane (Women)
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                  {currentBrand === 'AHL'
+                    ? "✓ 10 specific keywords + spelling variations (toupee & topee) on IG Reels & YT Shorts"
+                    : "✓ 5 product categories: Wigs, Toppers, Permanent & Clip-In Extensions, Bangs"}
+                </div>
+              </div>
+
+              {/* Category Filter & Target Keywords */}
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Target Niche Keywords:
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Niche Categories:
+                    </span>
                   </div>
                   {!isAddingKeyword && (
                     <button
@@ -467,7 +583,7 @@ export default function HomePage() {
                         background: 'rgba(245, 158, 11, 0.08)',
                         border: '1px dashed var(--gold-400)',
                         color: 'var(--gold-400)',
-                        fontSize: '0.78rem',
+                        fontSize: '0.76rem',
                         fontWeight: 600,
                         padding: '3px 12px',
                         borderRadius: '9999px',
@@ -475,13 +591,56 @@ export default function HomePage() {
                         transition: 'all 0.2s'
                       }}
                     >
-                      <Plus size={13} /> Add Target Keyword
+                      <Plus size={13} /> Add Custom Keyword
                     </button>
                   )}
                 </div>
 
+                {/* Category Selector Tabs */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCategory('All')}
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: '9999px',
+                      fontSize: '0.76rem',
+                      fontWeight: 600,
+                      border: selectedCategory === 'All' ? '1px solid var(--gold-400)' : '1px solid var(--border-subtle)',
+                      background: selectedCategory === 'All' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                      color: selectedCategory === 'All' ? 'var(--gold-400)' : 'var(--text-dim)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    All Keywords ({keywordList.length})
+                  </button>
+                  {categoryGroups.map((g) => (
+                    <button
+                      key={g.category}
+                      type="button"
+                      onClick={() => setSelectedCategory(g.category)}
+                      style={{
+                        padding: '4px 12px',
+                        borderRadius: '9999px',
+                        fontSize: '0.76rem',
+                        fontWeight: 600,
+                        border: selectedCategory === g.category ? '1px solid var(--gold-400)' : '1px solid var(--border-subtle)',
+                        background: selectedCategory === g.category ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                        color: selectedCategory === g.category ? 'var(--gold-400)' : 'var(--text-dim)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {g.category} ({g.keywords.length})
+                    </button>
+                  ))}
+                </div>
+
+                {/* Keyword Pills Under Selected Category */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-                  {keywordList.map((kw) => (
+                  {(selectedCategory === 'All'
+                    ? keywordList
+                    : (categoryGroups.find((g) => g.category === selectedCategory)?.keywords || keywordList)
+                  ).map((kw) => (
                     <div
                       key={kw}
                       onClick={() => {
@@ -567,96 +726,268 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Filters Row */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'center' }}>
-                <div style={{ flex: '1 1 280px', position: 'relative' }}>
-                  <Search size={16} color="var(--text-dim)" style={{ position: 'absolute', left: '12px', top: '12px' }} />
+              {/* Search & Primary Scan Action Bar */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'stretch' }}>
+                <div style={{ flex: '1 1 320px', position: 'relative' }}>
+                  <Search size={16} color="var(--text-dim)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
                   <input
                     type="text"
-                    placeholder="Or type custom search query (e.g. hair system before after, hair patch cost)..."
+                    placeholder={`Search custom query (or active: "${selectedKeyword}")...`}
                     value={customKeyword}
                     onChange={(e) => setCustomKeyword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleRunRadar();
+                      }
+                    }}
                     style={{
                       width: '100%',
-                      padding: '10px 14px 10px 38px',
-                      background: 'rgba(0, 0, 0, 0.3)',
+                      height: '100%',
+                      minHeight: '44px',
+                      padding: '10px 38px 10px 40px',
+                      background: 'rgba(0, 0, 0, 0.35)',
                       border: '1px solid var(--border-highlight)',
                       borderRadius: 'var(--radius-md)',
                       color: '#fff',
-                      fontSize: '0.88rem'
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                      transition: 'border-color 0.2s'
                     }}
                   />
+                  {customKeyword && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomKeyword('')}
+                      style={{
+                        position: 'absolute',
+                        right: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-dim)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '4px'
+                      }}
+                      title="Clear custom query"
+                    >
+                      <X size={15} />
+                    </button>
+                  )}
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleRunRadar}
+                  disabled={isScanning}
+                  style={{
+                    flexShrink: 0,
+                    minHeight: '44px',
+                    padding: '0 24px',
+                    fontSize: '0.92rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.01em',
+                    boxShadow: '0 4px 18px rgba(245, 158, 11, 0.35)',
+                    whiteSpace: 'nowrap'
+                  }}
+                  title="Scan YouTube and Instagram for viral outliers"
+                >
+                  {isScanning ? (
+                    <>
+                      <RefreshCw size={18} className="spin" /> Scanning...
+                    </>
+                  ) : (
+                    <>
+                      <Radar size={18} /> Scan Radar
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Filters Strip */}
+              <div 
+                style={{ 
+                  display: 'flex', 
+                  flexWrap: 'wrap', 
+                  gap: '10px', 
+                  alignItems: 'center',
+                  background: 'rgba(0, 0, 0, 0.22)',
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid rgba(255, 255, 255, 0.06)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '4px' }}>
+                  <SlidersHorizontal size={14} color="var(--text-dim)" />
+                  <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Filters:
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', flex: '1 1 auto', alignItems: 'center' }}>
                   <select
                     value={selectedPlatform}
                     onChange={(e: any) => setSelectedPlatform(e.target.value)}
+                    className="radar-filter-select"
                     style={{
-                      padding: '10px 14px',
-                      background: 'rgba(0, 0, 0, 0.3)',
+                      flex: '1 1 165px',
+                      minWidth: '145px',
+                      padding: '8px 12px',
+                      background: 'rgba(15, 23, 42, 0.7)',
                       border: '1px solid var(--border-highlight)',
-                      borderRadius: 'var(--radius-md)',
+                      borderRadius: 'var(--radius-sm)',
                       color: '#fff',
-                      fontSize: '0.86rem',
+                      fontSize: '0.84rem',
                       cursor: 'pointer'
                     }}
                   >
-                    <option value="all">Platforms: All (YouTube + IG)</option>
-                    <option value="youtube">YouTube Data API</option>
-                    <option value="instagram">Instagram Reels (Apify)</option>
+                    <option value="all">Platform: All (YT + IG)</option>
+                    <option value="youtube">Platform: YouTube</option>
+                    <option value="instagram">Platform: Instagram Reels</option>
                   </select>
 
                   <select
                     value={minMultiplier}
                     onChange={(e: any) => setMinMultiplier(Number(e.target.value))}
+                    className="radar-filter-select"
                     style={{
-                      padding: '10px 14px',
-                      background: 'rgba(0, 0, 0, 0.3)',
-                      border: '1px solid var(--border-highlight)',
-                      borderRadius: 'var(--radius-md)',
-                      color: '#fff',
-                      fontSize: '0.86rem',
+                      flex: '1 1 150px',
+                      minWidth: '135px',
+                      padding: '8px 12px',
+                      background: 'rgba(15, 23, 42, 0.7)',
+                      border: minMultiplier > 0 ? '1px solid var(--gold-400)' : '1px solid var(--border-highlight)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: minMultiplier > 0 ? 'var(--gold-400)' : '#fff',
+                      fontSize: '0.84rem',
+                      fontWeight: minMultiplier > 0 ? 600 : 400,
                       cursor: 'pointer'
                     }}
                   >
-                    <option value="0">All Multipliers</option>
-                    <option value="1.5">Min 1.5x Baseline</option>
-                    <option value="3">Min 3x Breakouts</option>
-                    <option value="5">Min 5x Mega Outliers</option>
+                    <option value="0">Multiplier: All</option>
+                    <option value="1.5">Multiplier: Min 1.5x</option>
+                    <option value="3">Multiplier: Min 3x Breakout</option>
+                    <option value="5">Multiplier: Min 5x Mega Outlier</option>
                   </select>
 
-                  <button
-                    className="btn btn-primary"
-                    onClick={handleRunRadar}
-                    disabled={isScanning}
+                  <select
+                    value={minViews}
+                    onChange={(e: any) => setMinViews(Number(e.target.value))}
+                    className="radar-filter-select"
+                    style={{
+                      flex: '1 1 170px',
+                      minWidth: '150px',
+                      padding: '8px 12px',
+                      background: 'rgba(15, 23, 42, 0.7)',
+                      border: minViews > 0 ? '1px solid var(--gold-400)' : '1px solid var(--border-highlight)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: minViews > 0 ? 'var(--gold-400)' : '#fff',
+                      fontSize: '0.84rem',
+                      fontWeight: minViews > 0 ? 600 : 400,
+                      cursor: 'pointer'
+                    }}
+                    title="Minimum outlier views threshold"
                   >
-                    {isScanning ? (
-                      <>
-                        <RefreshCw size={16} className="spin" /> Scanning...
-                      </>
-                    ) : (
-                      <>
-                        <Radar size={16} /> Scan Radar
-                      </>
-                    )}
-                  </button>
+                    <option value="100000">Views: 1 Lakh+ (0.1M)</option>
+                    <option value="500000">Views: 5 Lakhs+ (0.5M)</option>
+                    <option value="1000000">Views: 10 Lakhs+ (1M+)</option>
+                    <option value="0">Views: Any Views</option>
+                  </select>
+
+                  <select
+                    value={minFollowers}
+                    onChange={(e: any) => setMinFollowers(Number(e.target.value))}
+                    className="radar-filter-select"
+                    style={{
+                      flex: '1 1 170px',
+                      minWidth: '150px',
+                      padding: '8px 12px',
+                      background: 'rgba(15, 23, 42, 0.7)',
+                      border: minFollowers > 0 ? '1px solid var(--gold-400)' : '1px solid var(--border-highlight)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: minFollowers > 0 ? 'var(--gold-400)' : '#fff',
+                      fontSize: '0.84rem',
+                      fontWeight: minFollowers > 0 ? 600 : 400,
+                      cursor: 'pointer'
+                    }}
+                    title="Minimum creator followers / subscribers"
+                  >
+                    <option value="14000">Followers: &gt; 14k+ (Target)</option>
+                    <option value="50000">Followers: &gt; 50k+</option>
+                    <option value="100000">Followers: &gt; 100k+ (1 Lakh+)</option>
+                    <option value="0">Followers: Any Size</option>
+                  </select>
+
+                  <select
+                    value={minFollowerRatio}
+                    onChange={(e: any) => setMinFollowerRatio(Number(e.target.value))}
+                    className="radar-filter-select"
+                    style={{
+                      flex: '1 1 190px',
+                      minWidth: '160px',
+                      padding: '8px 12px',
+                      background: 'rgba(15, 23, 42, 0.7)',
+                      border: minFollowerRatio > 0 ? '1px solid var(--gold-400)' : '1px solid var(--border-highlight)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: minFollowerRatio > 0 ? 'var(--gold-400)' : '#fff',
+                      fontSize: '0.84rem',
+                      fontWeight: minFollowerRatio > 0 ? 700 : 400,
+                      cursor: 'pointer'
+                    }}
+                    title="Filter by Views-to-Followers / Subscribers Reach Ratio"
+                  >
+                    <option value="0">Reach Ratio: Any Ratio</option>
+                    <option value="2">Reach Ratio: 🚀 2x+ Followers</option>
+                    <option value="5">Reach Ratio: 🔥 5x+ Followers</option>
+                    <option value="10">Reach Ratio: ⚡ 10x+ Followers</option>
+                    <option value="20">Reach Ratio: 👑 20x+ Followers</option>
+                  </select>
+
+                  {(minFollowerRatio > 0 || minViews !== 100000 || minFollowers !== 14000 || minMultiplier > 0 || selectedPlatform !== 'all') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPlatform('all');
+                        setMinMultiplier(0);
+                        setMinViews(0);
+                        setMinFollowers(0);
+                        setMinFollowerRatio(0);
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: '1px dashed rgba(255, 255, 255, 0.25)',
+                        color: 'var(--text-dim)',
+                        fontSize: '0.78rem',
+                        padding: '6px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title="Reset all filters to default"
+                    >
+                      Reset Filters
+                    </button>
+                  )}
                 </div>
               </div>
 
               {scanMessage && (
-                <div style={{ fontSize: '0.84rem', color: 'var(--cyan-400)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <RefreshCw size={14} /> {scanMessage}
+                <div style={{ fontSize: '0.84rem', color: 'var(--cyan-400)', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(6, 182, 212, 0.08)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
+                  <RefreshCw size={14} className="spin" /> {scanMessage}
                 </div>
               )}
             </div>
           </div>
 
           {/* Results Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
             <div style={{ fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
               <TrendingUp size={18} color="var(--gold-400)" />
-              <span>Ranked Outliers ({radarCandidates.length})</span>
+              <span>Ranked Outliers ({filteredCandidates.length})</span>
             </div>
             <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
               Accurate mathematical outlier ratio (Views ÷ Creator Median)
@@ -664,20 +995,30 @@ export default function HomePage() {
           </div>
 
           {/* Candidate Grid */}
-          {radarCandidates.length === 0 ? (
+          {filteredCandidates.length === 0 ? (
             <div className="glass-panel" style={{ padding: '60px 20px', textAlign: 'center' }}>
               <Radar size={48} color="var(--text-dim)" style={{ margin: '0 auto 16px auto', display: 'block' }} />
-              <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>No cached radar scans yet</h3>
+              <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>No matching outlier videos found</h3>
               <p style={{ color: 'var(--text-muted)', maxWidth: '420px', margin: '0 auto 20px auto', fontSize: '0.9rem' }}>
-                Click "Scan Radar" to find viral hair system and patch videos across YouTube and Instagram.
+                {radarCandidates.length > 0 
+                  ? 'No videos match the current Reach Ratio or View filters. Try adjusting the dropdowns or click "Scan Radar".'
+                  : 'Click "Scan Radar" to find viral hair system and patch videos across YouTube and Instagram.'}
               </p>
-              <button className="btn btn-primary" onClick={handleRunRadar}>
-                <Radar size={16} /> Launch Scan
+              <button className="btn btn-primary" onClick={handleRunRadar} disabled={isScanning}>
+                {isScanning ? (
+                  <>
+                    <RefreshCw size={16} className="spin" /> Scanning...
+                  </>
+                ) : (
+                  <>
+                    <Radar size={16} /> Scan Radar
+                  </>
+                )}
               </button>
             </div>
           ) : (
             <div className="radar-grid">
-              {radarCandidates.map((c) => (
+              {filteredCandidates.map((c) => (
                 <div key={c.id} className="video-card">
                   <div className="card-thumbnail-container">
                     {c.thumbnailUrl ? (
@@ -726,18 +1067,70 @@ export default function HomePage() {
                     <h3 className="card-title" title={c.title}>{c.title}</h3>
 
                     <div className="card-creator-row">
-                      <div className="creator-info">
+                      <div className="creator-info" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                         <span>@{c.creator.username || c.creator.displayName}</span>
+                        {c.creator.subscriberOrFollowerCount ? (
+                          <span style={{ fontSize: '0.72rem', background: 'rgba(255, 255, 255, 0.08)', padding: '2px 8px', borderRadius: '9999px', color: 'var(--text-muted)' }}>
+                            👥 {c.creator.subscriberOrFollowerCount >= 100000 ? `${(c.creator.subscriberOrFollowerCount / 100000).toFixed(1)} Lakh` : `${(c.creator.subscriberOrFollowerCount / 1000).toFixed(0)}k`} {c.platform === 'youtube' ? 'subs' : 'followers'}
+                          </span>
+                        ) : null}
+                        {(() => {
+                          const ratio = c.viewToFollowerRatio ?? (
+                            c.creator?.subscriberOrFollowerCount && c.creator.subscriberOrFollowerCount > 0
+                              ? c.viewCount / c.creator.subscriberOrFollowerCount
+                              : null
+                          );
+                          if (!ratio) return null;
+                          return (
+                            <span 
+                              style={{ 
+                                fontSize: '0.72rem', 
+                                background: ratio >= 10 ? 'rgba(245, 158, 11, 0.18)' : 'rgba(6, 182, 212, 0.15)', 
+                                border: ratio >= 10 ? '1px solid rgba(245, 158, 11, 0.45)' : '1px solid rgba(6, 182, 212, 0.35)',
+                                padding: '2px 8px', 
+                                borderRadius: '9999px', 
+                                color: ratio >= 10 ? 'var(--gold-400)' : 'var(--cyan-400)',
+                                fontWeight: 700 
+                              }}
+                              title={`Reach Ratio: Views (${c.viewCount.toLocaleString()}) ÷ Followers (${c.creator.subscriberOrFollowerCount?.toLocaleString()}) = ${ratio.toFixed(1)}x Reach`}
+                            >
+                              🚀 {ratio.toFixed(1)}x Reach
+                            </span>
+                          );
+                        })()}
                       </div>
                       <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
-                        Channel Median: ~{c.creator.medianViews?.toLocaleString()}
+                        Channel Median: ~{c.creator.medianViews >= 100000 ? `${(c.creator.medianViews / 100000).toFixed(1)}L` : c.creator.medianViews?.toLocaleString()}
                       </span>
                     </div>
 
                     <div className="card-stats-grid">
                       <div className="stat-item">
                         <span className="stat-label">Views</span>
-                        <span className="stat-value">{c.viewCount.toLocaleString()}</span>
+                        <span className="stat-value" style={{ color: 'var(--gold-400)' }} title={`${c.viewCount.toLocaleString()} total views`}>
+                          {c.viewCount >= 1000000
+                            ? `${(c.viewCount / 1000000).toFixed(1)}M`
+                            : c.viewCount >= 100000
+                            ? `${(c.viewCount / 100000).toFixed(1)} Lakh`
+                            : c.viewCount.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="stat-item">
+                        <span className="stat-label">Reach Ratio</span>
+                        <span 
+                          className="stat-value" 
+                          style={{ 
+                            color: (() => {
+                              const r = c.viewToFollowerRatio ?? (c.creator?.subscriberOrFollowerCount ? c.viewCount / c.creator.subscriberOrFollowerCount : 0);
+                              return r >= 10 ? 'var(--gold-400)' : r >= 2 ? 'var(--cyan-400)' : 'var(--text-main)';
+                            })()
+                          }}
+                        >
+                          {(() => {
+                            const r = c.viewToFollowerRatio ?? (c.creator?.subscriberOrFollowerCount ? c.viewCount / c.creator.subscriberOrFollowerCount : null);
+                            return r !== null ? `🚀 ${r.toFixed(1)}x` : 'N/A';
+                          })()}
+                        </span>
                       </div>
                       <div className="stat-item">
                         <span className="stat-label">Likes</span>
@@ -828,7 +1221,7 @@ export default function HomePage() {
               >
                 {isAnalyzing ? (
                   <>
-                    <RefreshCw size={16} className="spin" /> Analyzing Real Data...
+                    <RefreshCw size={16} className="spin" /> Frame-by-Frame Analysis...
                   </>
                 ) : (
                   <>
@@ -836,16 +1229,81 @@ export default function HomePage() {
                   </>
                 )}
               </button>
+
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setShowAiKeyInput(!showAiKeyInput)}
+                title="Configure Gemini Multimodal AI Agent API key"
+                style={{ padding: '12px 14px' }}
+              >
+                <Sparkles size={16} color={aiApiKey ? 'var(--cyan-400)' : 'var(--text-dim)'} />
+              </button>
             </div>
+
+            {/* Optional Gemini AI Agent Key Bar */}
+            {showAiKeyInput && (
+              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.80rem', color: 'var(--cyan-400)', fontWeight: 600 }}>
+                  🤖 Multimodal AI Agent Key (Gemini):
+                </span>
+                <input
+                  type="password"
+                  placeholder="Paste Gemini API Key (optional - free from aistudio.google.com)..."
+                  value={aiApiKey}
+                  onChange={(e) => setAiApiKey(e.target.value)}
+                  style={{
+                    flex: '1 1 300px',
+                    padding: '8px 12px',
+                    background: 'rgba(0,0,0,0.4)',
+                    border: '1px solid var(--border-highlight)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: '#fff',
+                    fontSize: '0.82rem'
+                  }}
+                />
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
+                  {aiApiKey ? '✓ AI Key Active' : 'Heuristic frame engine runs automatically if empty.'}
+                </span>
+              </div>
+            )}
           </div>
 
           {!currentBreakdown ? (
-            <div className="glass-panel" style={{ padding: '80px 20px', textAlign: 'center' }}>
+            <div className="glass-panel" style={{ padding: '60px 20px', textAlign: 'center' }}>
               <BarChart3 size={48} color="var(--gold-400)" style={{ margin: '0 auto 16px auto', display: 'block' }} />
-              <h3 style={{ fontSize: '1.25rem', marginBottom: '8px' }}>Paste a Video URL or Select from Radar</h3>
-              <p style={{ color: 'var(--text-muted)', maxWidth: '480px', margin: '0 auto', fontSize: '0.9rem' }}>
-                Fetches real video metrics, creator upload benchmarks, real audience comments, and accurate algorithmic diagnosis for that specific post.
+              <h3 style={{ fontSize: '1.35rem', marginBottom: '8px', fontWeight: 800 }}>Paste Video URL or Select Any Outlier</h3>
+              <p style={{ color: 'var(--text-muted)', maxWidth: '580px', margin: '0 auto 24px auto', fontSize: '0.92rem', lineHeight: 1.55 }}>
+                Analyzes the entire video frame-by-frame and second-by-second before making decisions. Pinpoints the exact visual hook, audio sync moments, psychological viral triggers, and generates an executive Social Media Director Remake Playbook.
               </p>
+
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => handleAnalyzeUrl('https://www.instagram.com/p/Dbvj6ykiBgi/')}
+                  disabled={isAnalyzing}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <Flame size={16} /> 💈 AHL Outlier: 1.3 Lakh Views Scalp Masterpiece
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => {
+                    const firstRadarCandidate = radarCandidates.find((c) => c.viewCount >= 100000) || radarCandidates[0];
+                    if (firstRadarCandidate) {
+                      handleAnalyzeUrl(firstRadarCandidate.url, firstRadarCandidate);
+                    } else {
+                      handleAnalyzeUrl('https://www.instagram.com/p/Dbvj6ykiBgi/');
+                    }
+                  }}
+                  disabled={isAnalyzing}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <Sparkles size={16} /> ✨ Analyze Top Radar Candidate
+                </button>
+              </div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -906,8 +1364,8 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* 4 Core Quantitative Metrics Tiles */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginTop: '20px', paddingTop: '18px', borderTop: '1px solid var(--border-subtle)' }}>
+                {/* 5 Core Quantitative Metrics Tiles */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', marginTop: '20px', paddingTop: '18px', borderTop: '1px solid var(--border-subtle)' }}>
                   <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Total Views vs Baseline</div>
                     <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#fff', marginTop: '4px' }}>
@@ -915,6 +1373,25 @@ export default function HomePage() {
                     </div>
                     <div style={{ fontSize: '0.76rem', color: 'var(--gold-400)', marginTop: '2px' }}>
                       Baseline: ~{currentBreakdown.creator.medianViews.toLocaleString()} ({currentBreakdown.metrics.outlierMultiplier}x multiplier)
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Follower Reach Multiplier</div>
+                    <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--gold-400)', marginTop: '4px' }}>
+                      {(() => {
+                        const subs = currentBreakdown.creator.subscribersOrFollowers || currentCandidate?.creator.subscriberOrFollowerCount;
+                        const ratio = currentCandidate?.viewToFollowerRatio || (subs ? Number((currentBreakdown.metrics.viewCount / subs).toFixed(1)) : null);
+                        return ratio ? `🚀 ${ratio}x Reach` : 'N/A';
+                      })()}
+                    </div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--cyan-400)', marginTop: '2px' }}>
+                      {(() => {
+                        const subs = currentBreakdown.creator.subscribersOrFollowers || currentCandidate?.creator.subscriberOrFollowerCount;
+                        return subs 
+                          ? `Views ÷ ${subs >= 100000 ? `${(subs / 100000).toFixed(1)} Lakh` : `${(subs / 1000).toFixed(0)}k`} audience`
+                          : 'Views ÷ Follower count';
+                      })()}
                     </div>
                   </div>
 
@@ -1104,165 +1581,282 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Bottom Card: Why This Specific Video Popped Off (Diagnosis) */}
-              <div className="glass-panel" style={{ padding: '24px' }}>
-                <div style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--gold-400)', textTransform: 'uppercase', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <TrendingUp size={16} /> Algorithmic Outlier Diagnostic
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
-                  <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                    <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--gold-400)', textTransform: 'uppercase' }}>
-                      1. Primary Outlier Driver
-                    </div>
-                    <p style={{ fontSize: '0.86rem', color: '#e2e8f0', marginTop: '6px', lineHeight: 1.45 }}>
-                      {currentBreakdown.whyOutlierDiagnosis.primaryDriver}
-                    </p>
-                  </div>
-
-                  <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                    <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--cyan-400)', textTransform: 'uppercase' }}>
-                      2. Retention & Drop-off Barrier
-                    </div>
-                    <p style={{ fontSize: '0.86rem', color: '#e2e8f0', marginTop: '6px', lineHeight: 1.45 }}>
-                      {currentBreakdown.whyOutlierDiagnosis.retentionHookReason}
-                    </p>
-                  </div>
-
-                  <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                    <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--emerald-500)', textTransform: 'uppercase' }}>
-                      3. Viewer Engagement Signal
-                    </div>
-                    <p style={{ fontSize: '0.86rem', color: '#e2e8f0', marginTop: '6px', lineHeight: 1.45 }}>
-                      {currentBreakdown.whyOutlierDiagnosis.engagementTrigger}
-                    </p>
-                  </div>
-
-                  <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                    <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--purple-500)', textTransform: 'uppercase' }}>
-                      4. Algorithmic Distribution
-                    </div>
-                    <p style={{ fontSize: '0.86rem', color: '#e2e8f0', marginTop: '6px', lineHeight: 1.45 }}>
-                      {currentBreakdown.whyOutlierDiagnosis.algorithmSignal}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* SOP Content Adaptation Desk (Why It Worked & Brand Adaptation Playbook) */}
-              {currentBreakdown.sopTaxonomy && (
-                <div className="glass-panel" style={{ padding: '24px', border: '1px solid rgba(245, 158, 11, 0.35)' }}>
+              {/* FFmpeg Sequential Frame Stream & AI Social Media Expert Agent */}
+              {currentBreakdown.strategistVerdict && (
+                <div className="glass-panel" style={{ padding: '24px', border: '1px solid rgba(6, 182, 212, 0.4)', background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(0, 0, 0, 0.4))' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <Flame size={20} color="var(--gold-400)" />
-                      <div>
-                        <span style={{ fontSize: '1.05rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          SOP Content Adaptation Desk
-                        </span>
-                        <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                          Analyze why it outperformed, tag the taxonomy, and adapt without copying.
-                        </div>
-                      </div>
-                      <span className={`outlier-badge ${getOutlierBadgeClass(currentBreakdown.metrics.outlierMultiplier)}`}>
-                        {currentBreakdown.sopTaxonomy.outlierTier}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Video size={18} color="var(--cyan-400)" />
+                      <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        FFmpeg Frame Stream & AI Social Media Expert
                       </span>
                     </div>
-
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      <span className="sop-tag" style={{ color: 'var(--cyan-400)', borderColor: 'rgba(6, 182, 212, 0.4)' }}>
-                        Topic: {currentBreakdown.sopTaxonomy.topicTag}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.74rem', background: 'rgba(6, 182, 212, 0.15)', color: 'var(--cyan-400)', border: '1px solid rgba(6, 182, 212, 0.4)', padding: '3px 10px', borderRadius: '9999px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--cyan-400)', display: 'inline-block' }} />
+                        🎬 {currentBreakdown.aiAgentAudit?.extractedFrames?.length || 6} Frames (FFmpeg)
                       </span>
-                      <span className="sop-tag" style={{ color: 'var(--gold-400)', borderColor: 'rgba(245, 158, 11, 0.4)' }}>
-                        Format: {currentBreakdown.sopTaxonomy.formatTag}
+                      <span style={{ fontSize: '0.74rem', background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)', padding: '3px 10px', borderRadius: '9999px', fontWeight: 700 }}>
+                        🤖 {currentBreakdown.aiAgentAudit?.agentModel || 'Gemini Social Media Director'}
                       </span>
-                      <span className="sop-tag" style={{ color: '#f472b6', borderColor: 'rgba(236, 72, 153, 0.4)' }}>
-                        Emotion: {currentBreakdown.sopTaxonomy.primaryEmotion}
+                      <button
+                        type="button"
+                        onClick={() => setShowSystemPrompt(!showSystemPrompt)}
+                        style={{
+                          fontSize: '0.74rem',
+                          background: showSystemPrompt ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                          color: '#fff',
+                          border: '1px solid var(--border-subtle)',
+                          padding: '3px 10px',
+                          borderRadius: '9999px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        <FileText size={12} /> {showSystemPrompt ? 'Hide System Prompt' : 'View System Prompt'}
+                      </button>
+                      <span style={{ fontSize: '0.78rem', background: 'rgba(245, 158, 11, 0.15)', color: 'var(--gold-400)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '3px 10px', borderRadius: '9999px', fontWeight: 700 }}>
+                        Viral Score: {currentBreakdown.strategistVerdict.viralScoreOut100}/100
                       </span>
                     </div>
                   </div>
 
-                  {/* Winner Element Box */}
-                  <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '20px' }}>
+                  {/* Collapsible System Prompt Inspector */}
+                  {showSystemPrompt && (
+                    <div style={{ background: 'rgba(0, 0, 0, 0.6)', border: '1px solid rgba(6, 182, 212, 0.3)', borderRadius: 'var(--radius-sm)', padding: '14px', marginBottom: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--cyan-400)', textTransform: 'uppercase' }}>
+                          📜 AI Agent Active System Prompt (Social Media Director)
+                        </span>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>Strict Multimodal Frame Directive</span>
+                      </div>
+                      <pre style={{ fontSize: '0.78rem', color: '#cbd5e1', whiteSpace: 'pre-wrap', fontFamily: 'monospace', lineHeight: 1.5, margin: 0 }}>
+                        {currentBreakdown.aiAgentAudit?.systemPrompt || `You are a world-class Short-Form Social Media Expert, Creative Director, and Viral Growth Strategist.
+You analyze video frames extracted via FFmpeg along with retention metrics to reverse-engineer viral outlier performance.
+Your mission:
+Carefully inspect all frames extracted through FFmpeg from this short-form video.
+1. The Winning Element: A single, sharp statement identifying the visual hook, camera angle, or high-contrast mechanism seen in these frames that stopped the viewer from scrolling.
+2. The One Thing That Makes This An Outlier: In EXACTLY 2 to 3 concise, punchy sentences, define the single deciding factor that made this video an outlier compared to ordinary content on the platform.`}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* FFmpeg Extracted Keyframes Reel */}
+                  {currentBreakdown.aiAgentAudit?.extractedFrames && currentBreakdown.aiAgentAudit.extractedFrames.length > 0 && (
+                    <div style={{ marginBottom: '22px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Layers size={14} color="var(--cyan-400)" />
+                          Sequential FFmpeg Extracted Frames ({currentBreakdown.aiAgentAudit.extractedFrames.length} Analyzed)
+                        </span>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                          Click any frame to inspect high-res trigger
+                        </span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+                        {currentBreakdown.aiAgentAudit.extractedFrames.map((frame, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => setSelectedFramePreview(frame)}
+                            style={{
+                              background: 'rgba(0, 0, 0, 0.45)',
+                              border: '1px solid rgba(255, 255, 255, 0.08)',
+                              borderRadius: 'var(--radius-sm)',
+                              overflow: 'hidden',
+                              cursor: 'pointer',
+                              transition: 'transform 0.15s ease, border-color 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform = 'translateY(-2px)';
+                              e.currentTarget.style.borderColor = 'var(--cyan-400)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'translateY(0)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                            }}
+                          >
+                            <div style={{ position: 'relative', width: '100%', height: '90px', background: '#0a0a0a' }}>
+                              <img
+                                src={frame.dataUrl}
+                                alt={`FFmpeg Frame ${frame.index}`}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
+                              <div style={{ position: 'absolute', top: '4px', left: '4px', background: 'rgba(0,0,0,0.75)', color: '#fff', fontSize: '0.68rem', fontWeight: 700, padding: '2px 5px', borderRadius: '3px' }}>
+                                {frame.timestamp}
+                              </div>
+                              {frame.retentionScore && (
+                                <div style={{ position: 'absolute', bottom: '4px', right: '4px', background: 'rgba(16, 185, 129, 0.85)', color: '#fff', fontSize: '0.64rem', fontWeight: 800, padding: '1px 5px', borderRadius: '3px' }}>
+                                  {frame.retentionScore}%
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ padding: '6px 8px' }}>
+                              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {frame.label || `Frame ${frame.index}`}
+                              </div>
+                              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginTop: '2px', lineHeight: 1.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                {frame.visualTrigger || 'Key visual trigger'}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Core Deliverable 1: The Winning Element */}
+                  <div style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(0, 0, 0, 0.4))', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: 'var(--radius-sm)', padding: '16px 18px', marginBottom: '14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--gold-400)' }}>
-                        Winning Element:
-                      </span>
-                      <span style={{ background: 'var(--gold-400)', color: '#000', fontSize: '0.75rem', fontWeight: 800, padding: '2px 8px', borderRadius: '4px' }}>
-                        {currentBreakdown.sopTaxonomy.winningElement}
+                      <Flame size={16} color="var(--gold-400)" />
+                      <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--gold-400)', letterSpacing: '0.05em' }}>
+                        🎯 The Winning Element (Identified from FFmpeg Frames)
                       </span>
                     </div>
-                    <p style={{ fontSize: '0.86rem', color: '#e2e8f0', margin: 0, lineHeight: 1.45 }}>
-                      {currentBreakdown.sopTaxonomy.adaptationPlays.winnerSummary}
+                    <div style={{ fontSize: '1.02rem', fontWeight: 700, color: '#fff', lineHeight: 1.45 }}>
+                      {currentBreakdown.aiAgentAudit?.winningElement || currentBreakdown.strategistVerdict.theUnfairAdvantage}
+                    </div>
+                  </div>
+
+                  {/* Core Deliverable 2: The One Thing That Makes This Video An Outlier (2-3 Sentences) */}
+                  <div style={{ background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(147, 51, 234, 0.1))', border: '1px solid rgba(6, 182, 212, 0.4)', borderRadius: 'var(--radius-sm)', padding: '18px 20px', marginBottom: '18px', position: 'relative' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <Sparkles size={16} color="var(--cyan-400)" />
+                      <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--cyan-400)', letterSpacing: '0.05em' }}>
+                        ⚡ The One Thing That Makes This An Outlier (Social Media Expert Verdict — 2-3 Sentences)
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.98rem', color: '#f8fafc', lineHeight: 1.65, fontWeight: 500, margin: 0, fontStyle: 'italic' }}>
+                      "{currentBreakdown.aiAgentAudit?.theOneOutlierThing || currentBreakdown.strategistVerdict.executiveVerdict}"
                     </p>
                   </div>
 
-                  {/* Side-by-side Adaptation Plays */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '18px' }}>
-                    {/* AHL Adaptation Card */}
-                    <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(245, 158, 11, 0.35)', borderRadius: 'var(--radius-md)', padding: '18px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                        <span style={{ fontSize: '1.2rem' }}>💈</span>
+                  {/* Supporting Strategic Advantage Cards */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+                    <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--cyan-400)' }}>
+                      <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--cyan-400)' }}>
+                        ⚡ The Unfair Advantage (Secret Sauce)
+                      </span>
+                      <p style={{ fontSize: '0.86rem', color: '#e2e8f0', marginTop: '6px', lineHeight: 1.5 }}>
+                        {currentBreakdown.strategistVerdict.theUnfairAdvantage}
+                      </p>
+                    </div>
+
+                    <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--purple-400)' }}>
+                      <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--purple-400)' }}>
+                        🧠 Viewer Psychological Trigger
+                      </span>
+                      <p style={{ fontSize: '0.86rem', color: '#e2e8f0', marginTop: '6px', lineHeight: 1.5 }}>
+                        {currentBreakdown.strategistVerdict.psychologicalTrigger}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Second-by-Second Frame Timeline & Audio Analysis */}
+              {currentBreakdown.deepVisualAnalysis && (
+                <div className="glass-panel" style={{ padding: '24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Layers size={18} color="var(--gold-400)" />
+                      <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Second-By-Second Frame Analysis & Sound Design
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+                      Analyzed across key algorithmic watch-time phases
+                    </span>
+                  </div>
+
+                  {/* Visual Hook & Audio Strategy Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px', marginBottom: '22px' }}>
+                    {/* Visual Hook Box */}
+                    <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--gold-400)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Eye size={15} /> Primary Visual Hook (Where & How Used)
+                      </div>
+                      <div style={{ marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>What Is Shown On Screen:</span>
+                        <div style={{ fontSize: '0.86rem', color: '#f1f5f9', fontWeight: 600, marginTop: '2px' }}>
+                          {currentBreakdown.deepVisualAnalysis.winningVisualHook.whatIsShown}
+                        </div>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
                         <div>
-                          <div style={{ fontSize: '0.94rem', fontWeight: 800, color: 'var(--gold-400)' }}>
-                            American Hairline (AHL) Adaptation Play
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Camera Framing:</span>
+                          <div style={{ fontSize: '0.82rem', color: '#cbd5e1', marginTop: '2px' }}>
+                            {currentBreakdown.deepVisualAnalysis.winningVisualHook.cameraAngleAndFraming}
                           </div>
-                          <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
-                            Tone: {currentBreakdown.sopTaxonomy.adaptationPlays.ahlTone}
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Exact Timing:</span>
+                          <div style={{ fontSize: '0.82rem', color: 'var(--cyan-400)', fontWeight: 600, marginTop: '2px' }}>
+                            {currentBreakdown.deepVisualAnalysis.winningVisualHook.exactTiming}
                           </div>
                         </div>
                       </div>
-
-                      <div style={{ marginBottom: '14px' }}>
-                        <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', color: 'var(--text-dim)', fontWeight: 700 }}>
-                          Tactical Execution Angle:
-                        </span>
-                        <p style={{ fontSize: '0.86rem', color: '#f1f5f9', marginTop: '4px', lineHeight: 1.45 }}>
-                          {currentBreakdown.sopTaxonomy.adaptationPlays.ahlAngle}
-                        </p>
-                      </div>
-
-                      <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '10px 12px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--gold-400)' }}>
-                        <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--gold-400)', fontWeight: 700 }}>
-                          Taboo & Social Reality Check:
-                        </span>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          {currentBreakdown.sopTaxonomy.adaptationPlays.ahlTabooCheck}
+                      <div>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Why It Stops The Thumb:</span>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {currentBreakdown.deepVisualAnalysis.winningVisualHook.whyItStopsTheScroll}
                         </div>
                       </div>
                     </div>
 
-                    {/* Alchemane Adaptation Card */}
-                    <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(236, 72, 153, 0.35)', borderRadius: 'var(--radius-md)', padding: '18px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                        <span style={{ fontSize: '1.2rem' }}>✨</span>
-                        <div>
-                          <div style={{ fontSize: '0.94rem', fontWeight: 800, color: '#f472b6' }}>
-                            Alchemane Adaptation Play
-                          </div>
-                          <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
-                            Tone: {currentBreakdown.sopTaxonomy.adaptationPlays.alchemaneTone}
-                          </div>
+                    {/* Audio Strategy Box */}
+                    <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--purple-400)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Music size={15} /> Audio & Song Strategy
+                      </div>
+                      <div style={{ marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Track & Audio Type:</span>
+                        <div style={{ fontSize: '0.86rem', color: '#f1f5f9', fontWeight: 600, marginTop: '2px' }}>
+                          🎵 {currentBreakdown.deepVisualAnalysis.audioAndMusicStrategy.trackName} ({currentBreakdown.deepVisualAnalysis.audioAndMusicStrategy.audioType})
                         </div>
                       </div>
-
-                      <div style={{ marginBottom: '14px' }}>
-                        <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', color: 'var(--text-dim)', fontWeight: 700 }}>
-                          Tactical Execution Angle:
-                        </span>
-                        <p style={{ fontSize: '0.86rem', color: '#f1f5f9', marginTop: '4px', lineHeight: 1.45 }}>
-                          {currentBreakdown.sopTaxonomy.adaptationPlays.alchemaneAngle}
-                        </p>
+                      <div style={{ marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Audio-Visual Sync Moment:</span>
+                        <div style={{ fontSize: '0.82rem', color: '#cbd5e1', marginTop: '2px' }}>
+                          {currentBreakdown.deepVisualAnalysis.audioAndMusicStrategy.syncMomentWithVisuals}
+                        </div>
                       </div>
-
-                      <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '10px 12px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid #f472b6' }}>
-                        <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#f472b6', fontWeight: 700 }}>
-                          Female Crown Thinning & Volume Check:
-                        </span>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          {currentBreakdown.sopTaxonomy.adaptationPlays.alchemaneTabooCheck}
+                      <div>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Algorithmic Audio Impact:</span>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--purple-300, #c084fc)', marginTop: '2px' }}>
+                          {currentBreakdown.deepVisualAnalysis.audioAndMusicStrategy.trendingStatus}
                         </div>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Frame Timeline Cards */}
+                  <div style={{ fontSize: '0.80rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '10px' }}>
+                    Frame Progression (Timeline):
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {currentBreakdown.deepVisualAnalysis.frameByFrameTimeline.map((seg, idx) => (
+                      <div key={idx} style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '14px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255, 255, 255, 0.05)', display: 'grid', gridTemplateColumns: '130px 180px 1fr', gap: '14px', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontSize: '0.80rem', fontWeight: 800, color: 'var(--gold-400)', background: 'rgba(245, 158, 11, 0.1)', padding: '3px 8px', borderRadius: '4px' }}>
+                            ⏱ {seg.timestamp}
+                          </span>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fff' }}>
+                            {seg.phase}
+                          </span>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
+                            {seg.cameraFraming}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: 1.45 }}>
+                          <div><strong>Visual Action:</strong> {seg.visualAction}</div>
+                          <div style={{ color: 'var(--text-dim)', fontSize: '0.78rem', marginTop: '2px' }}><strong>Sound Design:</strong> {seg.soundSync}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -1524,6 +2118,76 @@ export default function HomePage() {
             </div>
           </div>
         </main>
+      )}
+
+      {/* FFmpeg Frame Preview Modal */}
+      {selectedFramePreview && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.85)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px'
+          }}
+          onClick={() => setSelectedFramePreview(null)}
+        >
+          <div
+            style={{
+              background: '#0f172a',
+              border: '1px solid rgba(6, 182, 212, 0.4)',
+              borderRadius: 'var(--radius-md)',
+              maxWidth: '680px',
+              width: '100%',
+              overflow: 'hidden',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Video size={18} color="var(--cyan-400)" />
+                <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#fff' }}>
+                  {selectedFramePreview.label || 'FFmpeg Extracted Keyframe'}
+                </span>
+                <span style={{ fontSize: '0.74rem', background: 'rgba(6, 182, 212, 0.15)', color: 'var(--cyan-400)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
+                  {selectedFramePreview.timestamp || 'Keyframe'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedFramePreview(null)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ position: 'relative', width: '100%', maxHeight: '420px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <img
+                src={selectedFramePreview.dataUrl}
+                alt="Enlarged FFmpeg Frame"
+                style={{ maxWidth: '100%', maxHeight: '420px', objectFit: 'contain' }}
+              />
+            </div>
+
+            <div style={{ padding: '16px 20px', background: 'rgba(0, 0, 0, 0.3)' }}>
+              <div style={{ fontSize: '0.76rem', textTransform: 'uppercase', color: 'var(--cyan-400)', fontWeight: 800, marginBottom: '4px' }}>
+                Frame Visual Trigger & Algorithmic Impact
+              </div>
+              <p style={{ fontSize: '0.88rem', color: '#e2e8f0', margin: 0, lineHeight: 1.5 }}>
+                {selectedFramePreview.visualTrigger || 'Keyframe extracted via FFmpeg for multimodal visual analysis.'}
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

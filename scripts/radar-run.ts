@@ -18,10 +18,16 @@ async function main() {
   const args = process.argv.slice(2);
   const keywordArg = args.find((a) => a.startsWith('--keyword='))?.split('=')[1];
   const platformArg = args.find((a) => a.startsWith('--platform='))?.split('=')[1] || 'all';
+  const minViewsArg = args.find((a) => a.startsWith('--min-views='))?.split('=')[1];
+  const minFollowersArg = args.find((a) => a.startsWith('--min-followers='))?.split('=')[1];
+
+  const minViews = minViewsArg ? parseInt(minViewsArg, 10) : 100_000;
+  const minFollowers = minFollowersArg ? parseInt(minFollowersArg, 10) : 14_000;
 
   const keywordsToScan = keywordArg ? [keywordArg] : DEFAULT_RADAR_KEYWORDS.slice(0, 3);
   console.log(`Scanning keywords: ${keywordsToScan.map((k) => `"${k}"`).join(', ')}`);
-  console.log(`Platform scope: ${platformArg.toUpperCase()}\n`);
+  console.log(`Platform scope: ${platformArg.toUpperCase()}`);
+  console.log(`Filters applied : Min Views >= ${minViews.toLocaleString()} (Lakhs/Millions) | Min Followers >= ${minFollowers.toLocaleString()} (>14k)\n`);
 
   const allCandidates: OutlierCandidate[] = [];
 
@@ -33,10 +39,12 @@ async function main() {
       try {
         const ytResults = await searchYouTubeOutliers({
           keyword: kw,
-          maxResults: 6,
-          publishedAfterDays: 14
+          maxResults: 15,
+          publishedAfterDays: 30,
+          minViews,
+          minSubscribers: minFollowers
         });
-        console.log(`   ▶ YouTube: found ${ytResults.length} videos`);
+        console.log(`   ▶ YouTube: found ${ytResults.length} high-view outlier videos`);
         allCandidates.push(...ytResults);
       } catch (err: any) {
         console.error(`   ⚠️ YouTube scan error for "${kw}":`, err.message);
@@ -49,9 +57,11 @@ async function main() {
         console.log(`   📸 Instagram: querying popular reels on Apify for "${kw}"...`);
         const igResults = await searchInstagramOutliers({
           keyword: kw,
-          searchLimit: 8
+          searchLimit: 20,
+          minViews,
+          minFollowers
         });
-        console.log(`   📸 Instagram: found ${igResults.length} popular reels`);
+        console.log(`   📸 Instagram: found ${igResults.length} high-view reels`);
         allCandidates.push(...igResults);
       } catch (err: any) {
         console.error(`   ⚠️ Instagram scan error for "${kw}":`, err.message);

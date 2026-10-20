@@ -7,3 +7,6 @@ out
 build
 *.log
 .DS_Store
+*.tsbuildinfo
+test_breakdown_out.json
+scratch/

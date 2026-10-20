@@ -5,16 +5,25 @@ import { analyzeOutlierVideo } from '@/breakdown/analyze';
 import { getSavedRadarCache, getCachedVideo, saveVideoToRegistry } from '@/storage';
 import { OutlierCandidate, DetailedOutlierBreakdown } from '@/types';
 
+export const maxDuration = 60; // 60s timeout for video frame extraction & AI analysis
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { url, candidateId, forceRefresh } = body;
+    const { url, candidateId, forceRefresh, aiApiKey } = body;
 
     // 1. Check Master Video Registry for existing breakdown (0 tokens, 0 scraper calls!)
     const targetKey = url || candidateId;
-    if (targetKey && !forceRefresh) {
+    if (targetKey && !forceRefresh && !aiApiKey) {
       const cachedEntry = getCachedVideo(targetKey, 72); // 72-hour TTL
-      if (cachedEntry && cachedEntry.breakdown) {
+      if (
+        cachedEntry &&
+        cachedEntry.breakdown &&
+        cachedEntry.breakdown.deepVisualAnalysis &&
+        cachedEntry.breakdown.aiAgentAudit?.extractedFrames &&
+        cachedEntry.breakdown.aiAgentAudit.extractedFrames.length > 0
+      ) {
         return NextResponse.json({
           success: true,
           candidate: cachedEntry.candidate,
@@ -26,12 +35,15 @@ export async function POST(req: NextRequest) {
 
     let candidate: OutlierCandidate | null = null;
 
-    // 2. Check radar cache
+    // 2. Check radar cache or master registry
     if (candidateId) {
       const cached = getSavedRadarCache();
       const found = cached.find((c) => c.id === candidateId || c.url === candidateId);
       if (found) {
         candidate = found;
+      } else {
+        const regEntry = getCachedVideo(candidateId);
+        if (regEntry) candidate = regEntry.candidate;
       }
     }
 
@@ -57,8 +69,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Generate dynamic breakdown
-    const analysis: DetailedOutlierBreakdown = await analyzeOutlierVideo(candidate);
+    // 4. Generate dynamic breakdown with frame-by-frame and strategist analysis
+    const effectiveApiKey = (aiApiKey && String(aiApiKey).trim()) || process.env.GEMINI_API_KEY;
+    const analysis: DetailedOutlierBreakdown = await analyzeOutlierVideo(candidate, { aiApiKey: effectiveApiKey });
 
     // 5. Store in master registry so it never needs to be re-scraped
     saveVideoToRegistry(candidate, analysis);
