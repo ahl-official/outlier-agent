@@ -357,3 +357,53 @@ export function removeCustomKeyword(keyword: string): string[] {
   saveBrandConfig(config);
   return finalKeywords;
 }
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  role: string;
+  dailyTarget: number;
+  phone?: string;
+  notes?: string;
+}
+
+export const DEFAULT_TEAM_MEMBERS: TeamMember[] = [
+  {
+    id: 'member-1',
+    name: 'Member 1 (Aman)',
+    role: 'Social Media Specialist',
+    dailyTarget: 10,
+    phone: '',
+    notes: 'YouTube Shorts & Outlier Discovery'
+  },
+  {
+    id: 'member-2',
+    name: 'Member 2 (Rahul)',
+    role: 'Content Strategist',
+    dailyTarget: 10,
+    phone: '',
+    notes: 'Viral Transformation Hooks'
+  },
+  {
+    id: 'member-3',
+    name: 'Member 3 (Priya)',
+    role: 'Reels & Creative Researcher',
+    dailyTarget: 10,
+    phone: '',
+    notes: 'AHL & Alchemane Outliers'
+  }
+];
+
+export function getTeamMembers(): TeamMember[] {
+  const members = safeReadJson<TeamMember[]>('team.json', DEFAULT_TEAM_MEMBERS);
+  if (!Array.isArray(members) || members.length === 0) {
+    return DEFAULT_TEAM_MEMBERS;
+  }
+  return members;
+}
+
+export function saveTeamMembers(members: TeamMember[]): TeamMember[] {
+  safeWriteJson('team.json', members);
+  return members;
+}
+

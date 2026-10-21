@@ -32,7 +32,16 @@ import {
   User,
   HelpCircle,
   AlertCircle,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Copy,
+  Send,
+  Phone,
+  FileSpreadsheet,
+  Users,
+  AlertTriangle,
+  Settings,
+  Edit3,
+  UserPlus
 } from 'lucide-react';
 import { OutlierCandidate, DetailedOutlierBreakdown, BoardItem, BoardStatus } from '@/types';
 import { 
@@ -42,8 +51,172 @@ import {
   ALCHEMANE_CATEGORY_GROUPS 
 } from '@/keywords';
 
+function WhatsAppIcon({ size = 16, color = '#25D366', style }: { size?: number; color?: string; style?: React.CSSProperties }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0, ...style }}
+    >
+      <path
+        d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.999-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.887 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c-.001 2.096.547 4.142 1.588 5.945L0 24l6.335-1.662c1.746.953 3.71 1.455 5.711 1.456h.005c6.554 0 11.89-5.336 11.893-11.893a11.82 11.82 0 00-3.48-8.411z"
+        fill={color}
+      />
+    </svg>
+  );
+}
+
+function buildWhatsAppMessage(
+  breakdown?: DetailedOutlierBreakdown | null,
+  candidate?: OutlierCandidate | null,
+  note?: string,
+  brand?: 'AHL' | 'Alchemane'
+): string {
+  const title = breakdown?.title || candidate?.title || 'Viral Hair Transformation Reel';
+  const url = breakdown?.candidateUrl || candidate?.url || '';
+  const platform = (breakdown?.platform || candidate?.platform) === 'youtube' ? 'YouTube Short / Video' : 'Instagram Reel';
+  
+  const creatorName = breakdown?.creator?.displayName || breakdown?.creator?.username || candidate?.creator?.displayName || candidate?.creator?.username || 'Creator';
+  const username = breakdown?.creator?.username || candidate?.creator?.username || '';
+  const followers = breakdown?.creator?.subscribersOrFollowers || candidate?.creator?.subscriberOrFollowerCount;
+  const followerStr = followers 
+    ? (followers >= 100000 ? `${(followers / 100000).toFixed(1)} Lakh` : `${(followers / 1000).toFixed(0)}k`) 
+    : '';
+
+  const views = breakdown?.metrics?.viewCount ?? candidate?.viewCount;
+  const viewsStr = views ? views.toLocaleString() : 'N/A';
+  const medianViews = breakdown?.creator?.medianViews ?? candidate?.creator?.medianViews;
+  const medianStr = medianViews ? `~${medianViews.toLocaleString()}` : 'baseline';
+  const multiplier = breakdown?.metrics?.outlierMultiplier ?? candidate?.outlierMultiplier;
+  const viralityTier = breakdown?.metrics?.viralityTier || (multiplier && multiplier >= 10 ? 'Mega Outlier (10x+)' : multiplier && multiplier >= 5 ? 'Real Outlier (5x+)' : 'Notable Outlier (3x+)');
+  
+  const reachRatio = candidate?.viewToFollowerRatio || (views && followers ? Number((views / followers).toFixed(1)) : null);
+  const engagement = breakdown?.metrics?.engagementRatePercent;
+  const likes = breakdown?.metrics?.likeCount ?? candidate?.likeCount;
+  const comments = breakdown?.metrics?.commentCount ?? candidate?.commentCount;
+  const velocity = breakdown?.metrics?.velocityViewsPerDay;
+
+  // Reasons & Hook Mechanics
+  const hookHeadline = breakdown?.contentAnalysis?.hookHeadline || '';
+  const hookMechanism = breakdown?.contentAnalysis?.hookMechanism || '';
+  const visualHook = breakdown?.deepVisualAnalysis?.winningVisualHook?.whatIsShown || '';
+  const scrollStopper = breakdown?.deepVisualAnalysis?.winningVisualHook?.whyItStopsTheScroll || '';
+  const psychTrigger = breakdown?.strategistVerdict?.psychologicalTrigger || breakdown?.whyOutlierDiagnosis?.engagementTrigger || '';
+  const retentionDriver = breakdown?.whyOutlierDiagnosis?.retentionHookReason || breakdown?.whyOutlierDiagnosis?.primaryDriver || candidate?.whyOutlier || '';
+  const oneOutlierThing = breakdown?.aiAgentAudit?.theOneOutlierThing || breakdown?.strategistVerdict?.theUnfairAdvantage || '';
+  const brandAngle = brand === 'Alchemane' ? 'Alchemane Hair Extensions' : 'American Hairline (AHL)';
+
+  // Audio & Soundtrack Strategy Details
+  const audioStrategy = breakdown?.deepVisualAnalysis?.audioAndMusicStrategy;
+  const audioTrack = audioStrategy?.trackName || breakdown?.contentAnalysis?.audioOrMusicTrack || candidate?.musicOrAudio || '';
+  const audioType = audioStrategy?.audioType || '';
+  const audioSync = audioStrategy?.syncMomentWithVisuals || '';
+  const audioImpact = audioStrategy?.trendingStatus || '';
+  const audioRec = audioStrategy?.soundRecommendationForBrand || '';
+
+  let msg = `🔥 *OUTLIER VIDEO INTELLIGENCE REPORT* 🔥\n`;
+  msg += `_Reverse-engineered for Sir & Creative Leadership_\n`;
+
+  if (note && note.trim()) {
+    msg += `\n💬 *NOTE FOR SIR:* ${note.trim()}\n`;
+  }
+
+  msg += `\n📹 *Title:* ${title}\n`;
+  if (url) {
+    msg += `🔗 *Video Link:* ${url}\n`;
+  }
+  msg += `📱 *Platform:* ${platform}\n`;
+  msg += `👤 *Creator:* ${creatorName}${username ? ` (@${username})` : ''}${followerStr ? ` • ${followerStr} followers` : ''}\n`;
+  msg += `🏷️ *Target Brand:* ${brandAngle}\n`;
+
+  msg += `\n📊 *WHY THIS IS A PROVEN OUTLIER:*\n`;
+  if (multiplier) {
+    msg += `• *Outlier Multiplier:* ${multiplier}x normal performance (${viralityTier})\n`;
+  }
+  msg += `• *Total Views:* ${viewsStr} (vs creator typical: ${medianStr})\n`;
+  if (reachRatio) {
+    msg += `• *Viral Reach Ratio:* 🚀 ${reachRatio}x follower base\n`;
+  }
+  if (engagement !== undefined) {
+    msg += `• *Engagement Rate:* ${engagement}%`;
+    if (likes !== undefined && comments !== undefined) {
+      msg += ` (${likes.toLocaleString()} likes • ${comments.toLocaleString()} comments)`;
+    }
+    msg += `\n`;
+  }
+  if (velocity) {
+    msg += `• *Velocity:* ~${velocity.toLocaleString()} views/day\n`;
+  }
+
+  msg += `\n🎯 *SECRET VIRAL HOOK & MECHANICS:*\n`;
+  if (visualHook || hookHeadline) {
+    msg += `• *Visual Hook:* ${visualHook || hookHeadline}\n`;
+  }
+  if (scrollStopper || hookMechanism) {
+    msg += `• *Scroll-Stopper Secret:* ${scrollStopper || hookMechanism}\n`;
+  }
+  if (psychTrigger) {
+    msg += `• *Psychological Trigger:* ${psychTrigger}\n`;
+  }
+  if (retentionDriver) {
+    msg += `• *Retention Driver:* ${retentionDriver}\n`;
+  }
+
+  if (audioTrack || audioType || audioSync) {
+    msg += `\n🎵 *AUDIO & SOUND STRATEGY:*\n`;
+    msg += `• *Track / Sound:* ${audioTrack || 'Original Audio'}${audioType ? ` (${audioType})` : ''}\n`;
+    if (audioSync) {
+      msg += `• *Visual Sync Moment:* ${audioSync}\n`;
+    }
+    if (audioImpact) {
+      msg += `• *Audio Virality:* ${audioImpact}\n`;
+    }
+    if (audioRec) {
+      msg += `• *Brand Audio Play:* ${audioRec}\n`;
+    }
+  }
+
+  if (oneOutlierThing) {
+    msg += `\n💡 *EXECUTIVE TAKEAWAY / SHOOT ANGLE:*\n${oneOutlierThing}\n`;
+  }
+
+  msg += `\n⚡ _Sent via AHL Outlier Intelligence Radar_ 🚀`;
+
+  return msg;
+}
+
+function normalizeUrlClient(url: string): string {
+  if (!url) return '';
+  try {
+    const raw = url.trim();
+    const parsed = new URL(raw.startsWith('http') ? raw : `https://${raw}`);
+    if (parsed.hostname.includes('youtube.com') || parsed.hostname.includes('youtu.be')) {
+      if (parsed.hostname.includes('youtu.be')) {
+        const videoId = parsed.pathname.replace(/^\//, '').split('/')[0]?.split('?')[0];
+        if (videoId) return `yt:${videoId}`;
+      }
+      if (parsed.pathname.includes('/shorts/')) {
+        const shortId = parsed.pathname.split('/shorts/')[1]?.split('/')[0]?.split('?')[0];
+        if (shortId) return `yt:${shortId}`;
+      }
+      const v = parsed.searchParams.get('v');
+      if (v) return `yt:${v}`;
+    }
+    if (parsed.hostname.includes('instagram.com')) {
+      const match = parsed.pathname.match(/\/(reel|p)\/([A-Za-z0-9_-]+)/);
+      if (match && match[2]) return `ig:${match[2]}`;
+    }
+    return (parsed.origin + parsed.pathname).replace(/\/$/, '').toLowerCase();
+  } catch {
+    return url.trim().toLowerCase();
+  }
+}
+
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<'radar' | 'breakdown' | 'board'>('radar');
+  const [activeTab, setActiveTab] = useState<'radar' | 'breakdown' | 'board' | 'tracker'>('radar');
 
   // Radar state
   const [keywordList, setKeywordList] = useState<string[]>(DEFAULT_RADAR_KEYWORDS);
@@ -57,7 +230,7 @@ export default function HomePage() {
   const [minMultiplier, setMinMultiplier] = useState<number>(0);
   const [minViews, setMinViews] = useState<number>(100_000); // 1 Lakh+ default
   const [minFollowers, setMinFollowers] = useState<number>(14_000); // >14k default
-  const [minFollowerRatio, setMinFollowerRatio] = useState<number>(0); // 0 = Any reach ratio
+  const [minFollowerRatio, setMinFollowerRatio] = useState<number>(2.5); // Default >= 2.5x reach (views > 2.5x followers)
   const [radarCandidates, setRadarCandidates] = useState<OutlierCandidate[]>([]);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanMessage, setScanMessage] = useState<string>('');
@@ -104,12 +277,317 @@ export default function HomePage() {
   // Toast state
   const [toast, setToast] = useState<string | null>(null);
 
+  // WhatsApp forward to Sir state (Default: +91 98201 88505)
+  const DEFAULT_SIR_PHONE = '+91 98201 88505';
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState<boolean>(false);
+  const [sirPhone, setSirPhone] = useState<string>(DEFAULT_SIR_PHONE);
+  const [sirNote, setSirNote] = useState<string>('');
+  const [copiedWhatsApp, setCopiedWhatsApp] = useState<boolean>(false);
+  const [whatsAppTarget, setWhatsAppTarget] = useState<{
+    breakdown?: DetailedOutlierBreakdown | null;
+    candidate?: OutlierCandidate | null;
+  } | null>(null);
+
+  // Google Sheets & Team Quota Tracker state
+  interface TeamMemberConfig {
+    id: string;
+    name: string;
+    role: string;
+    dailyTarget: number;
+    phone?: string;
+    notes?: string;
+  }
+
+  const DEFAULT_TEAM_LIST: TeamMemberConfig[] = [
+    { id: 'member-1', name: 'Member 1 (Aman)', role: 'Social Media Specialist', dailyTarget: 10, notes: 'YouTube Shorts & Outlier Discovery' },
+    { id: 'member-2', name: 'Member 2 (Rahul)', role: 'Content Strategist', dailyTarget: 10, notes: 'Viral Transformation Hooks' },
+    { id: 'member-3', name: 'Member 3 (Priya)', role: 'Reels & Creative Researcher', dailyTarget: 10, notes: 'AHL & Alchemane Outliers' }
+  ];
+
+  const [teamMembers, setTeamMembers] = useState<TeamMemberConfig[]>(DEFAULT_TEAM_LIST);
+  const [teamMember, setTeamMember] = useState<string>('Member 1 (Aman)');
+  const [isEditingTeam, setIsEditingTeam] = useState<boolean>(false);
+  const [editingMembers, setEditingMembers] = useState<TeamMemberConfig[]>(DEFAULT_TEAM_LIST);
+  const [isSavingTeam, setIsSavingTeam] = useState<boolean>(false);
+
+  const [trackerData, setTrackerData] = useState<{
+    sheetUrl: string;
+    folderUrl: string;
+    totalLogged: number;
+    todayCount: number;
+    todayIST: string;
+    memberCounts: Record<string, number>;
+    existingUrls: string[];
+  }>({
+    sheetUrl: 'https://docs.google.com/spreadsheets/d/14nj56PxfqLHcv8xTB03_RKSfyDD2s-C9Psk3LMnWGdU/edit',
+    folderUrl: 'https://drive.google.com/drive/folders/0AIG06pZpg4KBUk9PVA',
+    totalLogged: 0,
+    todayCount: 0,
+    todayIST: '',
+    memberCounts: {},
+    existingUrls: []
+  });
+  const [isLoggingToSheet, setIsLoggingToSheet] = useState<boolean>(false);
+  const [sheetDuplicateInfo, setSheetDuplicateInfo] = useState<{
+    isDuplicate: boolean;
+    message: string;
+    existingRecord?: any;
+  } | null>(null);
+
   // Initial load
   useEffect(() => {
     fetchRadarData();
     fetchBoardData();
     fetchKeywords();
+    fetchTeamMembers();
+    fetchTrackerData();
+    if (typeof window !== 'undefined') {
+      const savedPhone = localStorage.getItem('sir_whatsapp_phone');
+      if (savedPhone) {
+        setSirPhone(savedPhone);
+      } else {
+        setSirPhone(DEFAULT_SIR_PHONE);
+        localStorage.setItem('sir_whatsapp_phone', DEFAULT_SIR_PHONE);
+      }
+      const savedMember = localStorage.getItem('social_member_name');
+      if (savedMember) {
+        setTeamMember(savedMember);
+      }
+    }
   }, []);
+
+  const fetchTeamMembers = async () => {
+    try {
+      const res = await fetch('/api/team');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.members) && data.members.length > 0) {
+        setTeamMembers(data.members);
+      }
+    } catch (err) {
+      console.error('Error fetching team members:', err);
+    }
+  };
+
+  const handleOpenEditTeamModal = () => {
+    setEditingMembers(JSON.parse(JSON.stringify(teamMembers)));
+    setIsEditingTeam(true);
+  };
+
+  const handleSaveTeamMembers = async () => {
+    // Validate that at least one member has a name
+    const valid = editingMembers.filter(m => m.name.trim().length > 0);
+    if (valid.length === 0) {
+      showToast('Please keep at least one team member with a valid name');
+      return;
+    }
+
+    setIsSavingTeam(true);
+    try {
+      const res = await fetch('/api/team', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ members: valid })
+      });
+      const data = await res.json();
+      setIsSavingTeam(false);
+      if (data.success && data.members) {
+        setTeamMembers(data.members);
+        setIsEditingTeam(false);
+        showToast('Team members & daily quotas updated! 🎉');
+        if (!data.members.some((m: TeamMemberConfig) => m.name === teamMember)) {
+          const first = data.members[0]?.name || 'Member 1';
+          setTeamMember(first);
+          if (typeof window !== 'undefined') localStorage.setItem('social_member_name', first);
+        }
+        fetchTrackerData();
+      } else {
+        showToast(data.error || 'Failed to update team members');
+      }
+    } catch (err: any) {
+      setIsSavingTeam(false);
+      showToast(err.message || 'Error saving team members');
+    }
+  };
+
+  const fetchTrackerData = async () => {
+    try {
+      const res = await fetch('/api/tracker');
+      const data = await res.json();
+      if (data.success) {
+        if (data.teamMembers && Array.isArray(data.teamMembers) && data.teamMembers.length > 0) {
+          setTeamMembers(data.teamMembers);
+        }
+        setTrackerData({
+          sheetUrl: data.sheetUrl,
+          folderUrl: data.folderUrl,
+          totalLogged: data.totalLogged || 0,
+          todayCount: data.todayCount || 0,
+          todayIST: data.todayIST || '',
+          memberCounts: data.memberCounts || {},
+          existingUrls: data.existingUrls || []
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching tracker data:', err);
+    }
+  };
+
+  const handleOpenWhatsAppModal = (breakdown?: DetailedOutlierBreakdown | null, candidate?: OutlierCandidate | null) => {
+    const b = breakdown || currentBreakdown || undefined;
+    const c = candidate || currentCandidate || undefined;
+    setWhatsAppTarget({ breakdown: b, candidate: c });
+    setCopiedWhatsApp(false);
+
+    // Instant duplicate check against known sheet URLs
+    const targetUrl = c?.url || b?.coreIntelligence?.sourceUrl || '';
+    if (targetUrl && trackerData.existingUrls.length > 0) {
+      const norm = normalizeUrlClient(targetUrl);
+      if (trackerData.existingUrls.includes(norm)) {
+        setSheetDuplicateInfo({
+          isDuplicate: true,
+          message: '⚠️ This outlier was already logged into Sir\'s Google Sheet! Duplicates will not be re-added.'
+        });
+      } else {
+        setSheetDuplicateInfo(null);
+      }
+    } else {
+      setSheetDuplicateInfo(null);
+    }
+
+    setShowWhatsAppModal(true);
+  };
+
+  const handleLogToSheet = async (
+    b?: DetailedOutlierBreakdown | null,
+    c?: OutlierCandidate | null,
+    silent: boolean = false
+  ): Promise<{ success: boolean; duplicate?: boolean; message?: string }> => {
+    const breakdown = b || whatsAppTarget?.breakdown || currentBreakdown;
+    const candidate = c || whatsAppTarget?.candidate || currentCandidate;
+    const videoUrl = candidate?.url || breakdown?.coreIntelligence?.sourceUrl;
+
+    if (!videoUrl) {
+      if (!silent) showToast('No video URL found to save to Google Sheet');
+      return { success: false, message: 'No video URL found' };
+    }
+
+    setIsLoggingToSheet(true);
+    try {
+      const title = candidate?.title || breakdown?.coreIntelligence?.videoTitle || 'Untitled Outlier';
+      const creator = candidate?.creator || breakdown?.coreIntelligence?.creatorHandle || 'Unknown';
+      const followers = candidate?.creatorFollowers || breakdown?.coreIntelligence?.creatorFollowers || 0;
+      const views = candidate?.views || breakdown?.coreIntelligence?.views || 0;
+      const reachRatio = candidate?.viewToFollowerRatio || (followers > 0 ? views / followers : 0);
+      const multiplier = candidate?.multiplier || breakdown?.coreIntelligence?.outlierMultiplier || 0;
+      const tier = candidate?.outlierTier || breakdown?.sopTaxonomy?.outlierTier || 'Notable Outlier';
+      const visualHook = breakdown?.sopTaxonomy?.visualHook || breakdown?.breakdown?.frameworkBreakdown?.hook?.notes || 'High-contrast visual hook with immediate payoff';
+      const audioStrategy = breakdown?.audioStrategy?.soundtrackName 
+        ? `${breakdown.audioStrategy.soundtrackName} (${breakdown.audioStrategy.audioCategory || 'Original Audio'}) - ${breakdown.audioStrategy.audioStrategyTakeaway || ''}`
+        : 'High-engagement dialogue / original speech';
+      const secretFormula = breakdown?.sopTaxonomy?.strategicTakeaway || breakdown?.breakdown?.executiveSummary || 'Relatable problem-solution hook with immediate transformation';
+
+      const res = await fetch('/api/tracker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          submittedBy: teamMember,
+          brand: currentBrand === 'AHL' ? 'AHL Hair Systems' : 'Alchemane Hair Extensions',
+          platform: (candidate?.platform || 'youtube').toLowerCase().includes('instagram') ? 'Instagram Reels' : 'YouTube Shorts',
+          videoTitle: title,
+          videoUrl,
+          creator,
+          followers,
+          views,
+          reachRatio,
+          outlierMultiplier: multiplier,
+          outlierTier: tier,
+          visualHook,
+          audioStrategy,
+          secretFormula
+        })
+      });
+
+      const data = await res.json();
+      setIsLoggingToSheet(false);
+
+      if (data.duplicate) {
+        setSheetDuplicateInfo({
+          isDuplicate: true,
+          message: data.message,
+          existingRecord: data.existingRecord
+        });
+        if (!silent) {
+          showToast(`⚠️ Duplicate blocked! Already logged by ${data.existingRecord?.submittedBy || 'team member'}`);
+        }
+        return { success: false, duplicate: true, message: data.message };
+      }
+
+      if (data.success) {
+        setSheetDuplicateInfo(null);
+        await fetchTrackerData();
+        if (!silent) {
+          showToast(`✅ Saved to Google Sheet! (${data.memberTodayCount}/10 completed today by ${teamMember})`);
+        }
+        return { success: true, duplicate: false, message: data.message };
+      } else {
+        if (!silent) showToast(data.error || 'Failed to save to Google Sheet');
+        return { success: false, message: data.error };
+      }
+    } catch (err: any) {
+      setIsLoggingToSheet(false);
+      if (!silent) showToast(err.message || 'Error connecting to Google Sheets');
+      return { success: false, message: err.message };
+    }
+  };
+
+  const handleSendToSirOnWhatsApp = () => {
+    const b = whatsAppTarget?.breakdown || currentBreakdown;
+    const c = whatsAppTarget?.candidate || currentCandidate;
+    if (!b && !c) {
+      showToast('No outlier video selected to share');
+      return;
+    }
+
+    const currentPhone = sirPhone.trim() || DEFAULT_SIR_PHONE;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sir_whatsapp_phone', currentPhone);
+    }
+
+    let rawDigits = currentPhone.replace(/[^0-9]/g, '');
+    if (rawDigits.length === 10) {
+      rawDigits = `91${rawDigits}`; // Prepend India country code if 10 digits provided
+    }
+    const cleanPhone = rawDigits;
+
+    const message = buildWhatsAppMessage(b, c, sirNote, currentBrand);
+    const encoded = encodeURIComponent(message);
+
+    const url = cleanPhone
+      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encoded}`
+      : `https://api.whatsapp.com/send?text=${encoded}`;
+
+    if (typeof window !== 'undefined') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+    // Auto-save to Google Sheet for team quota tracking and duplicate check
+    handleLogToSheet(b, c, false);
+    showToast('Redirecting to WhatsApp & saving to Google Sheet! 🚀');
+    setShowWhatsAppModal(false);
+  };
+
+  const handleCopyWhatsAppMessage = async () => {
+    const b = whatsAppTarget?.breakdown || currentBreakdown;
+    const c = whatsAppTarget?.candidate || currentCandidate;
+    const message = buildWhatsAppMessage(b, c, sirNote, currentBrand);
+    try {
+      await navigator.clipboard.writeText(message);
+      setCopiedWhatsApp(true);
+      showToast('WhatsApp report copied to clipboard!');
+      setTimeout(() => setCopiedWhatsApp(false), 2500);
+    } catch {
+      showToast('Failed to copy text');
+    }
+  };
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -465,6 +943,17 @@ export default function HomePage() {
                 <span>✨ Alchemane</span>
               </button>
             </div>
+
+            <a
+              href={trackerData.sheetUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-sheet"
+              style={{ fontSize: '0.78rem', padding: '6px 14px', textDecoration: 'none' }}
+              title="Open Sir's Outlier Tracker Sheet in Google Drive"
+            >
+              <FileSpreadsheet size={14} /> Open Google Sheet ↗
+            </a>
           </div>
 
           <h1 className="brand-title">
@@ -496,6 +985,26 @@ export default function HomePage() {
           >
             <Bookmark size={16} /> Saved Outliers
             {boardItems.length > 0 && <span className="nav-badge">{boardItems.length}</span>}
+          </button>
+          <button
+            className={`nav-tab-btn ${activeTab === 'tracker' ? 'active' : ''}`}
+            onClick={() => {
+              fetchTrackerData();
+              setActiveTab('tracker');
+            }}
+          >
+            <FileSpreadsheet size={16} /> Team Tracker & Google Sheet
+            <span
+              className="nav-badge"
+              style={{
+                background: trackerData.todayCount >= teamMembers.reduce((s, m) => s + (m.dailyTarget || 10), 0) ? 'var(--emerald-500)' : '#0f9d58',
+                color: '#fff',
+                fontWeight: 700
+              }}
+              title="Today's total logged outliers across team members"
+            >
+              {trackerData.todayCount}/{teamMembers.reduce((s, m) => s + (m.dailyTarget || 10), 0)}
+            </span>
           </button>
         </nav>
       </header>
@@ -926,8 +1435,8 @@ export default function HomePage() {
                     onChange={(e: any) => setMinFollowerRatio(Number(e.target.value))}
                     className="radar-filter-select"
                     style={{
-                      flex: '1 1 190px',
-                      minWidth: '160px',
+                      flex: '1 1 200px',
+                      minWidth: '170px',
                       padding: '8px 12px',
                       background: 'rgba(15, 23, 42, 0.7)',
                       border: minFollowerRatio > 0 ? '1px solid var(--gold-400)' : '1px solid var(--border-highlight)',
@@ -939,11 +1448,11 @@ export default function HomePage() {
                     }}
                     title="Filter by Views-to-Followers / Subscribers Reach Ratio"
                   >
-                    <option value="0">Reach Ratio: Any Ratio</option>
-                    <option value="2">Reach Ratio: 🚀 2x+ Followers</option>
-                    <option value="5">Reach Ratio: 🔥 5x+ Followers</option>
-                    <option value="10">Reach Ratio: ⚡ 10x+ Followers</option>
-                    <option value="20">Reach Ratio: 👑 20x+ Followers</option>
+                    <option value="2.5">Reach: 🚀 Min 2.5x+ Followers (Default)</option>
+                    <option value="5">Reach: 🔥 Min 5x+ Followers</option>
+                    <option value="10">Reach: ⚡ Min 10x+ Followers</option>
+                    <option value="1">Reach: Min 1.0x+ Followers</option>
+                    <option value="0">Reach: All (Include Below Followers)</option>
                   </select>
 
                   {(minFollowerRatio > 0 || minViews !== 100000 || minFollowers !== 14000 || minMultiplier > 0 || selectedPlatform !== 'all') && (
@@ -1154,6 +1663,30 @@ export default function HomePage() {
                       >
                         <BarChart3 size={14} /> Deep Dive
                       </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ padding: '6px 9px', color: '#25D366' }}
+                        title="Send this outlier to Sir on WhatsApp"
+                        onClick={() => handleOpenWhatsAppModal(null, c)}
+                      >
+                        <WhatsAppIcon size={14} color="#25D366" />
+                      </button>
+                      {(() => {
+                        const norm = normalizeUrlClient(c.url);
+                        const isInSheet = trackerData.existingUrls.includes(norm);
+                        return (
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm"
+                            style={isInSheet ? { color: '#34d399', borderColor: '#059669', background: 'rgba(16, 185, 129, 0.1)' } : { color: '#34d399' }}
+                            title={isInSheet ? "Already logged in Sir's Google Sheet" : "Save this outlier to Sir's Google Sheet"}
+                            onClick={() => handleLogToSheet(null, c, false)}
+                          >
+                            <FileSpreadsheet size={13} /> {isInSheet ? 'Logged' : 'Sheet'}
+                          </button>
+                        );
+                      })()}
                       {(() => {
                         const isSaved = boardItems.some((b) => b.candidate.url === c.url || b.candidate.id === c.id);
                         return (
@@ -1340,7 +1873,17 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '10px' }}>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn btn-whatsapp"
+                      onClick={() => handleOpenWhatsAppModal(currentBreakdown, currentCandidate || undefined)}
+                      title="Send detailed outlier report to Sir on WhatsApp"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                    >
+                      <WhatsAppIcon size={16} color="#fff" /> Send to Sir on WhatsApp
+                    </button>
+
                     {currentCandidate && (() => {
                       const isSaved = boardItems.some((b) => b.candidate.url === currentCandidate.url || b.candidate.id === currentCandidate.id);
                       return (
@@ -1864,6 +2407,54 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
                   </div>
                 </div>
               )}
+
+              {/* WhatsApp Forward to Sir Banner */}
+              <div className="whatsapp-callout-panel">
+                <div style={{ flex: '1 1 360px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <WhatsAppIcon size={22} color="#25D366" />
+                    <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>
+                      Forward Outlier Intelligence Brief to Sir
+                    </span>
+                    <span style={{ fontSize: '0.72rem', background: 'rgba(37, 211, 102, 0.2)', color: '#25D366', padding: '2px 8px', borderRadius: '9999px', fontWeight: 700 }}>
+                      Direct WhatsApp Redirect
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.5, margin: 0 }}>
+                    Share this video's exact viral reverse-engineering breakdown with Sir — including video link, follower reach multiplier, scroll-stopping visual hook, and strategic remake takeaway.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={handleCopyWhatsAppMessage}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    {copiedWhatsApp ? <Check size={16} color="var(--emerald-500)" /> : <Copy size={16} />}
+                    {copiedWhatsApp ? 'Copied Brief' : 'Copy Text'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sheet"
+                    onClick={() => handleLogToSheet(currentBreakdown, currentCandidate || undefined, false)}
+                    disabled={isLoggingToSheet}
+                    style={{ padding: '12px 18px', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                    title="Save this outlier record into Sir's Google Sheet"
+                  >
+                    <FileSpreadsheet size={16} /> Save to Google Sheet
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-whatsapp"
+                    onClick={() => handleOpenWhatsAppModal(currentBreakdown, currentCandidate || undefined)}
+                    style={{ padding: '12px 22px', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <WhatsAppIcon size={18} color="#fff" /> Send to Sir on WhatsApp →
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </main>
@@ -1940,13 +2531,24 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)' }}>
-                      <button
-                        className="btn btn-outline btn-sm"
-                        style={{ padding: '4px 8px', fontSize: '0.74rem' }}
-                        onClick={() => handleAnalyzeUrl(item.candidate.url, item.candidate)}
-                      >
-                        <BarChart3 size={12} /> Deep Dive
-                      </button>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          style={{ padding: '4px 8px', fontSize: '0.74rem' }}
+                          onClick={() => handleAnalyzeUrl(item.candidate.url, item.candidate)}
+                        >
+                          <BarChart3 size={12} /> Deep Dive
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          style={{ padding: '4px 7px', color: '#25D366' }}
+                          title="Send to Sir on WhatsApp"
+                          onClick={() => handleOpenWhatsAppModal(item.breakdown, item.candidate)}
+                        >
+                          <WhatsAppIcon size={12} color="#25D366" />
+                        </button>
+                      </div>
 
                       <div style={{ display: 'flex', gap: '4px' }}>
                         <button
@@ -2023,13 +2625,24 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)' }}>
-                      <button
-                        className="btn btn-outline btn-sm"
-                        style={{ padding: '4px 8px', fontSize: '0.74rem' }}
-                        onClick={() => handleAnalyzeUrl(item.candidate.url, item.candidate)}
-                      >
-                        <BarChart3 size={12} /> Deep Dive
-                      </button>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          style={{ padding: '4px 8px', fontSize: '0.74rem' }}
+                          onClick={() => handleAnalyzeUrl(item.candidate.url, item.candidate)}
+                        >
+                          <BarChart3 size={12} /> Deep Dive
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          style={{ padding: '4px 7px', color: '#25D366' }}
+                          title="Send to Sir on WhatsApp"
+                          onClick={() => handleOpenWhatsAppModal(item.breakdown, item.candidate)}
+                        >
+                          <WhatsAppIcon size={12} color="#25D366" />
+                        </button>
+                      </div>
 
                       <div style={{ display: 'flex', gap: '4px' }}>
                         <button
@@ -2124,6 +2737,263 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
         </main>
       )}
 
+      {/* ========================================================
+          TAB 4: TEAM TRACKER & GOOGLE SHEET
+         ======================================================== */}
+      {activeTab === 'tracker' && (
+        <main>
+          {/* Top Banner */}
+          <div className="glass-panel" style={{ padding: '28px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '1.4rem' }}>📊</span>
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                    Social Media Team Daily Outlier Tracker
+                  </h2>
+                </div>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0, maxWidth: '780px', lineHeight: 1.6 }}>
+                  Sir’s directive: 3 social media team members must identify & submit <strong>10 viral outliers daily</strong> (Total target: <strong>30 outliers/day</strong>).
+                  All submissions are synced directly to Sir's Google Sheet in the shared Drive folder. Duplicates are strictly prevented across the entire team!
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={handleOpenEditTeamModal}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', borderColor: 'var(--gold-400)', color: 'var(--gold-400)' }}
+                  title="Update member names, roles, or add team members"
+                >
+                  <Settings size={15} /> Edit Team & Quotas
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => {
+                    fetchTrackerData();
+                    fetchTeamMembers();
+                    showToast('Tracker data synced with Google Sheets! 🔄');
+                  }}
+                  title="Sync latest rows from Google Sheet"
+                >
+                  <RefreshCw size={15} /> Refresh
+                </button>
+              </div>
+            </div>
+
+            {/* Active User Selector Strip */}
+            <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px 20px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-highlight)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Users size={18} color="var(--cyan-400)" />
+                <span style={{ fontSize: '0.86rem', fontWeight: 700, color: '#e2e8f0' }}>
+                  Current Active Team Member:
+                </span>
+                <select
+                  value={teamMember}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setTeamMember(val);
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('social_member_name', val);
+                    }
+                    showToast(`Active member set to: ${val}`);
+                  }}
+                  style={{
+                    padding: '8px 14px',
+                    background: 'rgba(15, 23, 42, 0.9)',
+                    border: '1px solid var(--border-highlight)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--gold-400)',
+                    fontSize: '0.88rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {teamMembers.map(m => (
+                    <option key={m.id || m.name} value={m.name}>{m.name} ({m.dailyTarget}/day)</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleOpenEditTeamModal}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--cyan-400)', fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'underline' }}
+                >
+                  <Edit3 size={13} /> Edit Roster
+                </button>
+              </div>
+
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>
+                Target: {teamMembers.find(m => m.name === teamMember)?.dailyTarget || 10} daily outliers sent to Sir on WhatsApp & logged into Sheet
+              </div>
+            </div>
+          </div>
+
+          {/* Daily Quota Progress Cards (Dynamic Members + Team Total) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '18px', marginBottom: '28px' }}>
+            {teamMembers.map((m) => {
+              const count = trackerData.memberCounts[m.name] || 0;
+              const target = m.dailyTarget || 10;
+              const pct = Math.min(100, Math.round((count / target) * 100));
+              const isMe = teamMember === m.name;
+              return (
+                <div
+                  key={m.id || m.name}
+                  className="tracker-card"
+                  style={{
+                    border: isMe ? '1px solid var(--gold-400)' : '1px solid var(--border-subtle)',
+                    background: isMe ? 'rgba(245, 158, 11, 0.06)' : 'rgba(15, 23, 42, 0.65)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '1rem' }}>👤</span>
+                        <span style={{ fontSize: '0.92rem', fontWeight: 700, color: isMe ? 'var(--gold-400)' : '#fff' }}>
+                          {m.name}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                        {m.role || 'Social Media Specialist'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {isMe && (
+                        <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '9999px', background: 'var(--gold-400)', color: '#000', fontWeight: 800 }}>
+                          YOU
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleOpenEditTeamModal}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '2px' }}
+                        title="Edit this member's details"
+                      >
+                        <Edit3 size={13} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '8px 0 4px 0' }}>
+                    <span style={{ fontSize: '2rem', fontWeight: 800, color: count >= target ? 'var(--emerald-500)' : '#fff' }}>
+                      {count}
+                    </span>
+                    <span style={{ fontSize: '0.92rem', color: 'var(--text-dim)' }}>
+                      / {target} outliers today
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div style={{ width: '100%', height: '8px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '9999px', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${pct}%`,
+                        height: '100%',
+                        background: count >= target ? 'linear-gradient(90deg, #10b981, #059669)' : 'linear-gradient(90deg, #f59e0b, #d97706)',
+                        borderRadius: '9999px',
+                        transition: 'width 0.4s ease'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '4px' }}>
+                    <span>{pct}% Quota Done</span>
+                    <span>{count >= target ? '✅ Target Met!' : `${target - count} remaining`}</span>
+                  </div>
+
+                  {m.notes && (
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontStyle: 'italic', marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '6px' }}>
+                      🎯 {m.notes}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Total Team Aggregate Card */}
+            {(() => {
+              const totalTarget = teamMembers.reduce((sum, item) => sum + (item.dailyTarget || 10), 0);
+              const totalPct = totalTarget > 0 ? Math.min(100, Math.round((trackerData.todayCount / totalTarget) * 100)) : 0;
+              return (
+                <div className="tracker-card" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 150, 105, 0.05) 100%)', border: '1px solid rgba(16, 185, 129, 0.35)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#34d399' }}>
+                      🎯 Total Team Daily Quota
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                      Target: {totalTarget} / day
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '8px 0 4px 0' }}>
+                    <span style={{ fontSize: '2rem', fontWeight: 800, color: '#34d399' }}>
+                      {trackerData.todayCount}
+                    </span>
+                    <span style={{ fontSize: '0.92rem', color: 'var(--text-dim)' }}>
+                      / {totalTarget} Outliers Sent
+                    </span>
+                  </div>
+
+                  <div style={{ width: '100%', height: '8px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '9999px', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${totalPct}%`,
+                        height: '100%',
+                        background: 'linear-gradient(90deg, #10b981, #34d399)',
+                        borderRadius: '9999px',
+                        transition: 'width 0.4s ease'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', color: '#a7f3d0', marginTop: '4px' }}>
+                    <span>{totalPct}% Overall Progress</span>
+                    <span>{trackerData.todayCount >= totalTarget ? '🎉 Sir\'s Daily Goal Reached!' : `${totalTarget - trackerData.todayCount} to go`}</span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Sir's Approval Workflow & Anti-Duplicate Architecture */}
+          <div className="glass-panel" style={{ padding: '24px', marginBottom: '24px' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>🛡️</span> Sir's Approval & Anti-Duplicate System Details
+            </h3>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+              <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--emerald-400)', marginBottom: '6px' }}>
+                  1. Automatic Duplicate Prevention
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                  Every video URL is automatically normalized (extracting clean YouTube Video IDs and Instagram Shortcodes). If Member 1 already logged or sent a video to Sir, Member 2 & 3 cannot submit the same video. The system immediately alerts who submitted it and when.
+                </p>
+              </div>
+
+              <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--gold-400)', marginBottom: '6px' }}>
+                  2. Sir's Approval Dropdown in Sheet
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                  Column P in the Google Sheet is pre-formatted with an interactive dropdown: <strong>Pending Review</strong> (Yellow), <strong>Approved by Sir</strong> (Green), <strong>Rejected by Sir</strong> (Red), <strong>Under Discussion</strong>, and <strong>Already Shot</strong> (Purple).
+                </p>
+              </div>
+
+              <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--cyan-400)', marginBottom: '6px' }}>
+                  3. Sir's Reason & Feedback Column
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                  Column Q is reserved for Sir's feedback (e.g. why rejected, what angle to shoot, or modification needed for American Hairline / Alchemane branding).
+                </p>
+              </div>
+            </div>
+          </div>
+        </main>
+      )}
+
       {/* FFmpeg Frame Preview Modal */}
       {selectedFramePreview && (
         <div
@@ -2193,6 +3063,518 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
           </div>
         </div>
       )}
+
+      {/* WhatsApp Forward to Sir Modal */}
+      {showWhatsAppModal && (() => {
+        const breakdown = whatsAppTarget?.breakdown || currentBreakdown;
+        const candidate = whatsAppTarget?.candidate || currentCandidate;
+        const previewMessage = buildWhatsAppMessage(breakdown, candidate, sirNote, currentBrand);
+
+        return (
+          <div 
+            className="whatsapp-modal-overlay"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowWhatsAppModal(false);
+            }}
+          >
+            <div className="whatsapp-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="whatsapp-modal-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ background: '#25D366', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <WhatsAppIcon size={18} color="#fff" />
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                      Send Outlier Intelligence to Sir
+                    </h3>
+                    <p style={{ fontSize: '0.74rem', color: 'var(--text-dim)', margin: 0 }}>
+                      Pre-formatted viral breakdown, reach metrics & video link for instant WhatsApp sending
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowWhatsAppModal(false)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '6px' }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="whatsapp-modal-body">
+                {/* Team Member Selector & Daily Quota Header */}
+                <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Users size={16} color="var(--gold-400)" />
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#e2e8f0' }}>Submitting As:</span>
+                    <select
+                      value={teamMember}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTeamMember(val);
+                        if (typeof window !== 'undefined') localStorage.setItem('social_member_name', val);
+                      }}
+                      style={{
+                        padding: '5px 10px',
+                        background: 'rgba(15, 23, 42, 0.9)',
+                        border: '1px solid var(--border-highlight)',
+                        borderRadius: 'var(--radius-sm)',
+                        color: 'var(--gold-400)',
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {teamMembers.map(m => (
+                        <option key={m.id || m.name} value={m.name}>{m.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                    Daily Quota: <strong style={{ color: (trackerData.memberCounts[teamMember] || 0) >= (teamMembers.find(m => m.name === teamMember)?.dailyTarget || 10) ? 'var(--emerald-500)' : 'var(--gold-400)' }}>
+                      {trackerData.memberCounts[teamMember] || 0}/{teamMembers.find(m => m.name === teamMember)?.dailyTarget || 10}
+                    </strong> today
+                  </div>
+                </div>
+
+                {/* Duplicate Alert Banner */}
+                {sheetDuplicateInfo?.isDuplicate && (
+                  <div className="duplicate-alert-banner">
+                    <AlertTriangle size={18} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
+                    <div>
+                      <div style={{ fontWeight: 700, color: '#fca5a5', marginBottom: '2px' }}>
+                        DUPLICATE VIDEO DETECTED — ALREADY IN SIR'S SHEET
+                      </div>
+                      <div style={{ fontSize: '0.82rem' }}>
+                        {sheetDuplicateInfo.message}
+                      </div>
+                      <div style={{ marginTop: '6px' }}>
+                        <a
+                          href={trackerData.sheetUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: '#fff', textDecoration: 'underline', fontSize: '0.76rem', fontWeight: 600 }}
+                        >
+                          Check live Google Sheet record ↗
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Target Video Badge Card */}
+                {(breakdown || candidate) && (
+                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
+                        <span className={`platform-pill ${breakdown?.platform || candidate?.platform}`} style={{ fontSize: '0.68rem', padding: '2px 6px' }}>
+                          {(breakdown?.platform || candidate?.platform) === 'youtube' ? 'YouTube' : 'Instagram'}
+                        </span>
+                        <span className={`outlier-badge ${getOutlierBadgeClass(breakdown?.metrics.outlierMultiplier || candidate?.outlierMultiplier || 1)}`} style={{ fontSize: '0.68rem', padding: '2px 6px' }}>
+                          🔥 {(breakdown?.metrics.outlierMultiplier || candidate?.outlierMultiplier || 1)}x Outlier
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {breakdown?.title || candidate?.title}
+                      </div>
+                    </div>
+                    <a
+                      href={breakdown?.candidateUrl || candidate?.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-outline btn-sm"
+                      style={{ padding: '4px 8px', fontSize: '0.74rem', whiteSpace: 'nowrap' }}
+                    >
+                      <ExternalLink size={12} /> Test Link
+                    </a>
+                  </div>
+                )}
+
+                {/* Sir's Phone Number Input */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#e2e8f0', margin: 0 }}>
+                      📞 Sir's WhatsApp Number
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#25D366', fontWeight: 600 }}>
+                        ✓ Default: 9820188505
+                      </span>
+                      {sirPhone !== DEFAULT_SIR_PHONE && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSirPhone(DEFAULT_SIR_PHONE);
+                            if (typeof window !== 'undefined') {
+                              localStorage.setItem('sir_whatsapp_phone', DEFAULT_SIR_PHONE);
+                            }
+                          }}
+                          style={{ background: 'transparent', border: 'none', color: 'var(--cyan-400)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="+91 98201 88505 (Sir's Number)"
+                    value={sirPhone}
+                    onChange={(e) => {
+                      setSirPhone(e.target.value);
+                      if (typeof window !== 'undefined') {
+                        localStorage.setItem('sir_whatsapp_phone', e.target.value);
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      background: 'rgba(0, 0, 0, 0.45)',
+                      border: '1px solid var(--border-highlight)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: '#fff',
+                      fontSize: '0.88rem'
+                    }}
+                  />
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-dim)', margin: '4px 0 0 0' }}>
+                    💡 Pre-set to Sir's number (9820188505). You can change it anytime; your updates are automatically saved.
+                  </p>
+                </div>
+
+                {/* Quick Note for Sir */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#e2e8f0', marginBottom: '6px' }}>
+                    💬 Add a Personal Note for Sir (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Sir, check this 0:02 scalp reveal hook — perfect for our weekend shoot!"
+                    value={sirNote}
+                    onChange={(e) => setSirNote(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      background: 'rgba(0, 0, 0, 0.45)',
+                      border: '1px solid var(--border-highlight)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: '#fff',
+                      fontSize: '0.88rem'
+                    }}
+                  />
+                </div>
+
+                {/* WhatsApp Message Preview */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--cyan-400)', textTransform: 'uppercase' }}>
+                      📄 Live WhatsApp Message Preview
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                      Includes video link, audio analysis & core outlier formula
+                    </span>
+                  </div>
+                  <div className="whatsapp-preview-box">
+                    {previewMessage}
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="whatsapp-modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setShowWhatsAppModal(false)}
+                >
+                  Cancel
+                </button>
+
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={handleCopyWhatsAppMessage}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    {copiedWhatsApp ? <Check size={16} color="var(--emerald-500)" /> : <Copy size={16} />}
+                    {copiedWhatsApp ? 'Copied' : 'Copy Text'}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-sheet"
+                    onClick={() => handleLogToSheet(breakdown, candidate, false)}
+                    disabled={isLoggingToSheet}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    title="Save this record to Google Sheet without opening WhatsApp"
+                  >
+                    <FileSpreadsheet size={15} />
+                    {isLoggingToSheet ? 'Saving...' : 'Save to Sheet Only'}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-whatsapp"
+                    onClick={handleSendToSirOnWhatsApp}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px' }}
+                  >
+                    <WhatsAppIcon size={16} color="#fff" /> Send to Sir on WhatsApp →
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ========================================================
+          MANAGE TEAM MEMBERS & QUOTAS MODAL
+         ======================================================== */}
+      {isEditingTeam && (
+        <div
+          className="whatsapp-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsEditingTeam(false);
+          }}
+        >
+          <div className="whatsapp-modal" style={{ maxWidth: '740px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="whatsapp-modal-header" style={{ background: 'rgba(245, 158, 11, 0.08)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: 'var(--gold-400)', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Users size={18} color="#000" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                    Manage Social Media Team Members & Quotas
+                  </h3>
+                  <p style={{ fontSize: '0.74rem', color: 'var(--text-dim)', margin: 0 }}>
+                    Update member names, roles, and daily outlier quotas. Updates display live across the web app and Google Sheets!
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditingTeam(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '6px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="whatsapp-modal-body" style={{ maxHeight: '65vh' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#e2e8f0', textTransform: 'uppercase' }}>
+                  Team Roster ({editingMembers.length} Members)
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => {
+                    setEditingMembers([
+                      ...editingMembers,
+                      {
+                        id: `member-${Date.now()}`,
+                        name: `Member ${editingMembers.length + 1}`,
+                        role: 'Social Media Specialist',
+                        dailyTarget: 10,
+                        notes: 'Outlier Research'
+                      }
+                    ]);
+                  }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', padding: '5px 12px' }}
+                >
+                  <UserPlus size={14} /> + Add Team Member
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {editingMembers.map((member, idx) => (
+                  <div
+                    key={member.id || idx}
+                    style={{
+                      background: 'rgba(0, 0, 0, 0.45)',
+                      border: '1px solid var(--border-highlight)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '14px 16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--gold-400)' }}>
+                        Member #{idx + 1}
+                      </span>
+                      {editingMembers.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingMembers(editingMembers.filter((_, i) => i !== idx));
+                          }}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#f87171',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '0.74rem'
+                          }}
+                          title="Delete this team member"
+                        >
+                          <Trash2 size={13} /> Remove
+                        </button>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '4px', fontWeight: 600 }}>
+                          Full Name / Display Name:
+                        </label>
+                        <input
+                          type="text"
+                          value={member.name}
+                          placeholder="e.g. Aman Sharma / Rahul V."
+                          onChange={(e) => {
+                            const updated = [...editingMembers];
+                            updated[idx].name = e.target.value;
+                            setEditingMembers(updated);
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            background: 'rgba(15, 23, 42, 0.8)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: '#fff',
+                            fontSize: '0.84rem'
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '4px', fontWeight: 600 }}>
+                          Role / Specialization:
+                        </label>
+                        <input
+                          type="text"
+                          value={member.role}
+                          placeholder="e.g. Reels Specialist / Content Strategist"
+                          onChange={(e) => {
+                            const updated = [...editingMembers];
+                            updated[idx].role = e.target.value;
+                            setEditingMembers(updated);
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            background: 'rgba(15, 23, 42, 0.8)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: '#fff',
+                            fontSize: '0.84rem'
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '4px', fontWeight: 600 }}>
+                          Daily Quota Target (Outliers / Day):
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="50"
+                          value={member.dailyTarget}
+                          onChange={(e) => {
+                            const updated = [...editingMembers];
+                            updated[idx].dailyTarget = Number(e.target.value) || 10;
+                            setEditingMembers(updated);
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            background: 'rgba(15, 23, 42, 0.8)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: 'var(--emerald-400)',
+                            fontWeight: 700,
+                            fontSize: '0.84rem'
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '4px', fontWeight: 600 }}>
+                          Focus Area / Brand Notes:
+                        </label>
+                        <input
+                          type="text"
+                          value={member.notes || ''}
+                          placeholder="e.g. Men's Hair Patch Transformation"
+                          onChange={(e) => {
+                            const updated = [...editingMembers];
+                            updated[idx].notes = e.target.value;
+                            setEditingMembers(updated);
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            background: 'rgba(15, 23, 42, 0.8)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: '#fff',
+                            fontSize: '0.84rem'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="whatsapp-modal-footer">
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => {
+                  setEditingMembers(DEFAULT_TEAM_LIST);
+                  showToast('Reset to default 3 members');
+                }}
+              >
+                Reset to Defaults
+              </button>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setIsEditingTeam(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleSaveTeamMembers}
+                  disabled={isSavingTeam}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 22px' }}
+                >
+                  {isSavingTeam ? <RefreshCw size={15} className="spin" /> : <Check size={16} />}
+                  {isSavingTeam ? 'Saving Changes...' : 'Save & Update All'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

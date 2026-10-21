@@ -23,6 +23,7 @@ export interface YouTubeSearchOptions {
   videoDuration?: 'short' | 'any';
   minViews?: number;
   minSubscribers?: number;
+  minFollowerRatio?: number; // default 2.5x reach
 }
 
 function getApiKey(): string {
@@ -35,11 +36,12 @@ function getApiKey(): string {
 
 /**
  * Searches YouTube for recent niche videos and returns outlier-scored candidates.
+ * Strictly searches last 48 hours by default.
  */
 export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Promise<OutlierCandidate[]> {
   const apiKey = getApiKey();
   const maxResults = options.maxResults || 15;
-  const days = options.publishedAfterDays || 30;
+  const days = options.publishedAfterDays || 2; // Strictly 2 days (48 hours)
   const minViews = typeof options.minViews === 'number' ? options.minViews : 100_000;
   const minSubscribers = typeof options.minSubscribers === 'number' ? options.minSubscribers : 14_000;
 
@@ -52,9 +54,7 @@ export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Prom
   searchUrl.searchParams.set('q', options.keyword);
   searchUrl.searchParams.set('type', 'video');
   searchUrl.searchParams.set('order', searchOrder);
-  if (options.publishedAfterDays) {
-    searchUrl.searchParams.set('publishedAfter', publishedAfter);
-  }
+  searchUrl.searchParams.set('publishedAfter', publishedAfter); // Always enforce 48 hours
   searchUrl.searchParams.set('maxResults', String(maxResults));
   if (options.videoDuration) {
     searchUrl.searchParams.set('videoDuration', options.videoDuration);
@@ -136,6 +136,12 @@ export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Prom
       ? Math.round((viewCount / channelInfo.subCount) * 10) / 10
       : 0;
 
+    // Follower reach filter: default min 2.5x reach required
+    const minFollowerRatio = typeof options.minFollowerRatio === 'number' ? options.minFollowerRatio : 2.5;
+    if (minFollowerRatio > 0 && channelInfo.subCount > 0 && viewToFollowerRatio < minFollowerRatio) {
+      continue; // Skip videos that didn't reach min 2.5x subscribers!
+    }
+
     candidates.push({
       id: `yt_${videoId}`,
       platform: 'youtube',
@@ -173,7 +179,9 @@ export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Prom
         formatType: detectFormatType(cleanTitle, cleanDesc),
         likeCount,
         commentCount,
-        viewCount
+        viewCount,
+        followerCount: channelInfo.subCount,
+        viewToFollowerRatio
       })
     });
   }
@@ -263,7 +271,9 @@ export async function getYouTubeVideoByUrl(rawUrlOrId: string): Promise<OutlierC
       formatType: detectFormatType(cleanTitle, cleanDesc),
       likeCount,
       commentCount,
-      viewCount
+      viewCount,
+      followerCount: channelInfo.subCount,
+      viewToFollowerRatio
     })
   };
 }

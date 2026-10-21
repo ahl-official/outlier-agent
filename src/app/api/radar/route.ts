@@ -16,13 +16,22 @@ export const maxDuration = 60; // 60s timeout for radar multi-provider queries
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const cached = getSavedRadarCache().map((c) => {
-    if (typeof c.viewToFollowerRatio !== 'number') {
-      const followers = c.creator.subscriberOrFollowerCount || 0;
-      c.viewToFollowerRatio = followers > 0 ? Math.round((c.viewCount / followers) * 10) / 10 : 0;
-    }
-    return c;
-  });
+  const cached = getSavedRadarCache()
+    .map((c) => {
+      if (typeof c.viewToFollowerRatio !== 'number') {
+        const followers = c.creator.subscriberOrFollowerCount || 0;
+        c.viewToFollowerRatio = followers > 0 ? Math.round((c.viewCount / followers) * 10) / 10 : 0;
+      }
+      return c;
+    })
+    .filter((c) => {
+      // True Outlier Rule: Follower reach must be >= 2.5x (filters out big accounts with ordinary views)
+      const followers = c.creator?.subscriberOrFollowerCount || 0;
+      if (followers > 0) {
+        return (c.viewToFollowerRatio ?? 0) >= 2.5;
+      }
+      return true;
+    });
   return NextResponse.json({
     cached,
     defaultKeywords: DEFAULT_RADAR_KEYWORDS,
@@ -38,7 +47,7 @@ export async function POST(req: NextRequest) {
     const minMultiplier: number = body.minMultiplier || 0;
     const minViews: number = typeof body.minViews === 'number' ? body.minViews : 100_000;
     const minFollowers: number = typeof body.minFollowers === 'number' ? body.minFollowers : 14_000;
-    const minFollowerRatio: number = typeof body.minFollowerRatio === 'number' ? body.minFollowerRatio : 0;
+    const minFollowerRatio: number = typeof body.minFollowerRatio === 'number' ? body.minFollowerRatio : 2.5;
     const forceRefresh: boolean = !!body.forceRefresh;
 
     const candidates: OutlierCandidate[] = [];
@@ -52,7 +61,8 @@ export async function POST(req: NextRequest) {
           const matchingCache = cachedResults.filter((c) => {
             const viewsOk = minViews <= 0 || c.viewCount >= minViews;
             const followersOk = minFollowers <= 0 || (c.creator.subscriberOrFollowerCount || 0) >= minFollowers;
-            return viewsOk && followersOk;
+            const ratioOk = minFollowerRatio <= 0 || (c.viewToFollowerRatio || 0) >= minFollowerRatio;
+            return viewsOk && followersOk && ratioOk;
           });
           if (matchingCache.length > 0) {
             candidates.push(...matchingCache);
@@ -62,16 +72,17 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 2. Query YouTube if needed
+      // 2. Query YouTube if needed (strictly last 48 hours & >= 2.5x reach)
       const kwCandidates: OutlierCandidate[] = [];
       if (platform === 'all' || platform === 'youtube') {
         try {
           const yt = await searchYouTubeOutliers({
             keyword: kw,
             maxResults: 15,
-            publishedAfterDays: 30,
+            publishedAfterDays: 2, // Strictly last 48 hours
             minViews,
-            minSubscribers: minFollowers
+            minSubscribers: minFollowers,
+            minFollowerRatio
           });
           kwCandidates.push(...yt);
         } catch (err: any) {
@@ -79,14 +90,16 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 3. Query Instagram (Apify) if needed
+      // 3. Query Instagram (Apify) if needed (strictly last 48 hours & >= 2.5x reach)
       if (platform === 'all' || platform === 'instagram') {
         try {
           const ig = await searchInstagramOutliers({
             keyword: kw,
             searchLimit: 20,
             minViews,
-            minFollowers
+            minFollowers,
+            maxAgeHours: 48, // Strictly last 48 hours
+            minFollowerRatio
           });
           kwCandidates.push(...ig);
         } catch (err: any) {

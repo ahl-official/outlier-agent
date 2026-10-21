@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "dotenv": "^16.4.7",
+    "googleapis": "^187.0.0",
     "lucide-react": "^0.475.0",
     "next": "^14.2.24",
     "react": "^18.3.1",

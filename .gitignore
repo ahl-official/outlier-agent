@@ -10,3 +10,6 @@ build
 *.tsbuildinfo
 test_breakdown_out.json
 scratch/
+service account.json
+*service-account*.json
+credentials*.json

@@ -1,0 +1,23 @@
+[
+  {
+    "id": "member-1",
+    "name": "Shreyas",
+    "role": "Digital Marketer",
+    "dailyTarget": 10,
+    "notes": "YouTube Shorts & Outliers"
+  },
+  {
+    "id": "member-2",
+    "name": "Priyanka",
+    "role": "Digital Marketer",
+    "dailyTarget": 10,
+    "notes": "Viral Transformation Hooks"
+  },
+  {
+    "id": "member-3",
+    "name": "Isham",
+    "role": "Digital Marketer",
+    "dailyTarget": 10,
+    "notes": "AHL & Alchemane Outliers"
+  }
+]

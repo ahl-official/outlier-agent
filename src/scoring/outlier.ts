@@ -43,40 +43,41 @@ export function calculateOutlierScore(params: {
   }
 
   // 1b. Follower Reach Multiplier (Views / Follower Count)
-  // 500k views on a 20k account = 25x (Super Outlier)
-  // 500k views on a 5M account = 0.1x (Underperforming giant account)
+  // Reach ratio >= 2.5x is the standard outlier qualification threshold
   const safeFollowers = Math.max(followerCount || 0, 0);
   const followerRatio = safeFollowers > 0 ? Math.round((viewCount / safeFollowers) * 10) / 10 : 0;
   let followerBonus = 0;
   if (followerRatio >= 20) {
-    followerBonus = 15; // Viral explosion beyond follower base
+    followerBonus = 20; // Viral explosion beyond follower base
   } else if (followerRatio >= 10) {
-    followerBonus = 12;
+    followerBonus = 16;
   } else if (followerRatio >= 5) {
+    followerBonus = 12;
+  } else if (followerRatio >= 2.5) {
     followerBonus = 8;
-  } else if (followerRatio >= 2) {
-    followerBonus = 4;
-  } else if (followerRatio > 0 && followerRatio < 0.2) {
-    followerBonus = -12; // Massive account getting low views is NOT a true outlier
+  } else if (followerRatio >= 1.0) {
+    followerBonus = 2;
+  } else if (followerRatio > 0 && followerRatio < 1.0) {
+    followerBonus = -25; // Large account not even reaching its own follower count is NOT an outlier
   }
 
   // 2. Freshness Score (max 20 points)
-  // Posted in last 7 days = full points, degrading after 14 days
+  // Strictly rewards last 48 hours (<= 2 days)
   const publishDate = new Date(publishedAt);
   const now = new Date();
   const daysOld = Math.max(0, (now.getTime() - publishDate.getTime()) / (1000 * 60 * 60 * 24));
   
   let freshnessScore = 0;
-  if (daysOld <= 3) {
-    freshnessScore = 20;
+  if (daysOld <= 2) {
+    freshnessScore = 20; // Prime 48-hour viral window
+  } else if (daysOld <= 4) {
+    freshnessScore = 14;
   } else if (daysOld <= 7) {
-    freshnessScore = 18 - (daysOld - 3) * 1.5;
+    freshnessScore = 8;
   } else if (daysOld <= 14) {
-    freshnessScore = 12 - (daysOld - 7) * 1.0;
-  } else if (daysOld <= 30) {
-    freshnessScore = 5;
+    freshnessScore = 4;
   } else {
-    freshnessScore = 2;
+    freshnessScore = 1;
   }
 
   // 3. Engagement Score (max 15 points)
@@ -169,15 +170,28 @@ export function deriveSOPTaxonomy(params: {
   likeCount?: number;
   commentCount?: number;
   viewCount?: number;
+  followerCount?: number;
+  viewToFollowerRatio?: number;
 }): SOPTaxonomy {
-  const { title, caption = '', multiplier, formatType, likeCount = 0, commentCount = 0, viewCount = 0 } = params;
+  const { title, caption = '', multiplier, formatType, likeCount = 0, commentCount = 0, viewCount = 0, followerCount, viewToFollowerRatio } = params;
   const text = `${title} ${caption}`.toLowerCase();
 
-  // 1. Tier based on Outlier Multiple SOP: 3x+ notable, 5x+ real, 10x+ mega
+  const reach = typeof viewToFollowerRatio === 'number'
+    ? viewToFollowerRatio
+    : (followerCount && followerCount > 0 && viewCount > 0 ? viewCount / followerCount : null);
+
+  // 1. Tier based on BOTH Outlier Multiplier AND Follower Reach Ratio:
+  // If a video has reach < 2.5x (views < 2.5x followers), it is NOT a true outlier
   let outlierTier: SOPTaxonomy['outlierTier'] = 'Emerging (<3x)';
-  if (multiplier >= 10) outlierTier = 'Mega Outlier (10x+)';
-  else if (multiplier >= 5) outlierTier = 'Real Outlier (5x+)';
-  else if (multiplier >= 3) outlierTier = 'Notable Outlier (3x+)';
+  if (reach !== null && reach < 2.5) {
+    outlierTier = 'Emerging (<3x)'; // Account audience view; not viral breakout
+  } else if (multiplier >= 10 && (reach === null || reach >= 5.0)) {
+    outlierTier = 'Mega Outlier (10x+)';
+  } else if (multiplier >= 5 && (reach === null || reach >= 3.0)) {
+    outlierTier = 'Real Outlier (5x+)';
+  } else if (multiplier >= 3 && (reach === null || reach >= 2.5)) {
+    outlierTier = 'Notable Outlier (3x+)';
+  }
 
   // 2. Topic Tag: celebrity, myth-busting, transformation, taboo, cost/quality, maintenance
   let topicTag: SOPTaxonomy['topicTag'] = 'Transformation';

@@ -29,6 +29,8 @@ export interface InstagramSearchOptions {
   searchLimit?: number;
   minViews?: number;
   minFollowers?: number;
+  maxAgeHours?: number; // default 48 hours
+  minFollowerRatio?: number; // default 2.5x reach
 }
 
 /**
@@ -165,6 +167,18 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
       continue; // Filter out creators with under 14k followers
     }
 
+    // 4. Strict 48-hour post date filter
+    const maxAgeHours = typeof options.maxAgeHours === 'number' ? options.maxAgeHours : 48;
+    if (item.timestamp && maxAgeHours > 0) {
+      const pubMs = new Date(item.timestamp).getTime();
+      if (!isNaN(pubMs)) {
+        const ageHours = (Date.now() - pubMs) / (1000 * 60 * 60);
+        if (ageHours > maxAgeHours) {
+          continue; // Filter out content older than 48 hours!
+        }
+      }
+    }
+
     // In Instagram popular search, reels appear because they popped off.
     // Approximate creator median views: estimate from follower count or play count baseline
     const estimatedMedian = followerCount > 0
@@ -174,6 +188,13 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
     const viewToFollowerRatio = followerCount > 0
       ? Math.round((playCount / followerCount) * 10) / 10
       : 0;
+
+    // 5. Follower reach filter: default min 2.5x reach required
+    // (e.g. 9.4L follower account getting 2.9L views is 0.3x reach => DISQUALIFIED)
+    const minFollowerRatio = typeof options.minFollowerRatio === 'number' ? options.minFollowerRatio : 2.5;
+    if (minFollowerRatio > 0 && followerCount > 0 && viewToFollowerRatio < minFollowerRatio) {
+      continue; // Skip! Views must be >= 2.5x follower count to be a true outlier
+    }
 
     const score = calculateOutlierScore({
       viewCount: playCount,
@@ -227,7 +248,9 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
         formatType: detectReelFormat(caption),
         likeCount: likesCount,
         commentCount: commentsCount,
-        viewCount: playCount
+        viewCount: playCount,
+        followerCount,
+        viewToFollowerRatio
       })
     });
   }
@@ -325,7 +348,9 @@ export async function getInstagramReelByUrl(rawUrl: string): Promise<OutlierCand
       formatType: detectReelFormat(caption),
       likeCount: item.likesCount || 0,
       commentCount: item.commentsCount || 0,
-      viewCount: playCount
+      viewCount: playCount,
+      followerCount,
+      viewToFollowerRatio
     })
   };
 }
