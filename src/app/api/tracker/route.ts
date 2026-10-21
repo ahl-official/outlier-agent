@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { google } from 'googleapis';
-import path from 'path';
-import fs from 'fs';
+import { getGoogleSheetsClient } from '@/google-sheets';
 import { getTeamMembers } from '@/storage';
 
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID || '0AIG06pZpg4KBUk9PVA';
@@ -9,24 +7,7 @@ const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID || '14nj56PxfqLHcv8xTB03_RKSf
 const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit`;
 const FOLDER_URL = `https://drive.google.com/drive/folders/${FOLDER_ID}`;
 
-function getGoogleSheetsClient() {
-  const serviceAccountPath = path.resolve(process.cwd(), 'service account.json');
-  if (!fs.existsSync(serviceAccountPath)) {
-    throw new Error('service account.json credentials file not found on server.');
-  }
-
-  const auth = new google.auth.GoogleAuth({
-    keyFile: serviceAccountPath,
-    scopes: [
-      'https://www.googleapis.com/auth/spreadsheets',
-      'https://www.googleapis.com/auth/drive'
-    ]
-  });
-
-  return google.sheets({ version: 'v4', auth });
-}
-
-export function normalizeVideoUrl(url: string): string {
+function normalizeVideoUrl(url: string): string {
   if (!url) return '';
   try {
     const raw = url.trim();
@@ -86,6 +67,21 @@ function getISTTimestamp(): { formattedDate: string; rawTimestamp: string } {
 export async function GET() {
   try {
     const sheets = getGoogleSheetsClient();
+    if (!sheets) {
+      return NextResponse.json({
+        success: true,
+        todayCount: 0,
+        quotaTarget: 10,
+        totalTeamTodayCount: 0,
+        totalTeamQuotaTarget: 30,
+        memberCounts: {},
+        existingRecords: [],
+        sheetUrl: SHEET_URL,
+        folderUrl: FOLDER_URL,
+        teamMembers: getTeamMembers(),
+        warning: 'Google Sheets credentials not found. Tracker is running in local-only fallback mode.'
+      });
+    }
 
     // Fetch existing rows from 'Outliers Tracker'!A:R
     const response = await sheets.spreadsheets.values.get({
@@ -188,6 +184,12 @@ export async function POST(req: NextRequest) {
     }
 
     const sheets = getGoogleSheetsClient();
+    if (!sheets) {
+      return NextResponse.json(
+        { success: false, message: 'Google Sheets credentials not configured. Please add Google Service Account credentials to environment variables.' },
+        { status: 500 }
+      );
+    }
     const incomingNormalized = normalizeVideoUrl(videoUrl);
 
     // 1. Check for duplicates in existing rows

@@ -439,7 +439,7 @@ export default function HomePage() {
     setCopiedWhatsApp(false);
 
     // Instant duplicate check against known sheet URLs
-    const targetUrl = c?.url || b?.coreIntelligence?.sourceUrl || '';
+    const targetUrl = c?.url || b?.candidateUrl || '';
     if (targetUrl && trackerData.existingUrls.length > 0) {
       const norm = normalizeUrlClient(targetUrl);
       if (trackerData.existingUrls.includes(norm)) {
@@ -464,7 +464,7 @@ export default function HomePage() {
   ): Promise<{ success: boolean; duplicate?: boolean; message?: string }> => {
     const breakdown = b || whatsAppTarget?.breakdown || currentBreakdown;
     const candidate = c || whatsAppTarget?.candidate || currentCandidate;
-    const videoUrl = candidate?.url || breakdown?.coreIntelligence?.sourceUrl;
+    const videoUrl = candidate?.url || breakdown?.candidateUrl;
 
     if (!videoUrl) {
       if (!silent) showToast('No video URL found to save to Google Sheet');
@@ -473,18 +473,18 @@ export default function HomePage() {
 
     setIsLoggingToSheet(true);
     try {
-      const title = candidate?.title || breakdown?.coreIntelligence?.videoTitle || 'Untitled Outlier';
-      const creator = candidate?.creator || breakdown?.coreIntelligence?.creatorHandle || 'Unknown';
-      const followers = candidate?.creatorFollowers || breakdown?.coreIntelligence?.creatorFollowers || 0;
-      const views = candidate?.views || breakdown?.coreIntelligence?.views || 0;
+      const title = candidate?.title || breakdown?.title || 'Untitled Outlier';
+      const creator = candidate?.creator?.displayName || candidate?.creator?.username || breakdown?.creator?.displayName || breakdown?.creator?.username || 'Unknown';
+      const followers = candidate?.creator?.subscriberOrFollowerCount || breakdown?.creator?.subscribersOrFollowers || 0;
+      const views = candidate?.viewCount || breakdown?.metrics?.viewCount || 0;
       const reachRatio = candidate?.viewToFollowerRatio || (followers > 0 ? views / followers : 0);
-      const multiplier = candidate?.multiplier || breakdown?.coreIntelligence?.outlierMultiplier || 0;
-      const tier = candidate?.outlierTier || breakdown?.sopTaxonomy?.outlierTier || 'Notable Outlier';
-      const visualHook = breakdown?.sopTaxonomy?.visualHook || breakdown?.breakdown?.frameworkBreakdown?.hook?.notes || 'High-contrast visual hook with immediate payoff';
-      const audioStrategy = breakdown?.audioStrategy?.soundtrackName 
-        ? `${breakdown.audioStrategy.soundtrackName} (${breakdown.audioStrategy.audioCategory || 'Original Audio'}) - ${breakdown.audioStrategy.audioStrategyTakeaway || ''}`
-        : 'High-engagement dialogue / original speech';
-      const secretFormula = breakdown?.sopTaxonomy?.strategicTakeaway || breakdown?.breakdown?.executiveSummary || 'Relatable problem-solution hook with immediate transformation';
+      const multiplier = candidate?.outlierMultiplier || breakdown?.metrics?.outlierMultiplier || 0;
+      const tier = candidate?.sopTaxonomy?.outlierTier || breakdown?.sopTaxonomy?.outlierTier || 'Notable Outlier (3x+)';
+      const visualHook = breakdown?.deepVisualAnalysis?.winningVisualHook?.whatIsShown || breakdown?.contentAnalysis?.hookHeadline || 'High-contrast visual hook with immediate payoff';
+      const audioStrategy = breakdown?.deepVisualAnalysis?.audioAndMusicStrategy?.trackName 
+        ? `${breakdown.deepVisualAnalysis.audioAndMusicStrategy.trackName} (${breakdown.deepVisualAnalysis.audioAndMusicStrategy.audioType || 'Original Audio'})`
+        : (breakdown?.contentAnalysis?.audioOrMusicTrack || candidate?.musicOrAudio || 'High-engagement dialogue / original speech');
+      const secretFormula = breakdown?.strategistVerdict?.executiveVerdict || breakdown?.whyOutlierDiagnosis?.primaryDriver || candidate?.whyOutlier || 'Relatable problem-solution hook with immediate transformation';
 
       const res = await fetch('/api/tracker', {
         method: 'POST',

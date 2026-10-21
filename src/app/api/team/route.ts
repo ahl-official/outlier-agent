@@ -1,22 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTeamMembers, saveTeamMembers, TeamMember } from '@/storage';
-import { google } from 'googleapis';
-import path from 'path';
-import fs from 'fs';
+import { getGoogleSheetsClient } from '@/google-sheets';
 
 const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID || '14nj56PxfqLHcv8xTB03_RKSfyDD2s-C9Psk3LMnWGdU';
-
-function getGoogleSheetsClient() {
-  const serviceAccountPath = path.resolve(process.cwd(), 'service account.json');
-  if (!fs.existsSync(serviceAccountPath)) {
-    return null;
-  }
-  const auth = new google.auth.GoogleAuth({
-    keyFile: serviceAccountPath,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets']
-  });
-  return google.sheets({ version: 'v4', auth });
-}
 
 async function fetchMembersFromGoogleSheet(): Promise<TeamMember[] | null> {
   try {
