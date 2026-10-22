@@ -89,6 +89,34 @@ export async function getInstagramCreatorProfilesBatch(
 }
 
 /**
+ * Sanitizes keyword for Apify instagram-search-scraper.
+ * Apify strictly disallows characters matching:
+ *   [!?.,:;\-+=*&%$#@/~^|<>()\[\]{}"'`]
+ * Also replaces apostrophes (e.g. "Men's" -> "Mens") and collapses extra spaces.
+ */
+export function sanitizeForInstagramSearch(keyword: string): string {
+  if (!keyword) return '';
+  return keyword
+    .replace(/['’]/g, '')
+    .replace(/[!?.,:;\\\-+=*&%$#@/~^|<>()\[\]{}"`]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Extracts core 2-3 subject words if query has prepositions/stop words or is too long for Instagram topic index.
+ * (e.g. "Mens hair patch without glue" -> "Mens hair patch")
+ */
+export function extractCoreSearchTerm(keyword: string): string {
+  const stopWords = new Set(['without', 'with', 'in', 'for', 'and', 'or', 'the', 'a', 'an', 'to', 'of', 'at', 'by', 'from', 'on']);
+  const words = keyword.split(' ').filter((w) => !stopWords.has(w.toLowerCase()));
+  if (words.length >= 2) {
+    return words.slice(0, 3).join(' ');
+  }
+  return keyword;
+}
+
+/**
  * Searches Instagram popular reels using Apify instagram-search-scraper
  * Filters strictly by minViews (Lakhs/Millions) and minFollowers (>14k).
  */
@@ -98,36 +126,67 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
   const minViews = typeof options.minViews === 'number' ? options.minViews : 100_000;
   const minFollowers = typeof options.minFollowers === 'number' ? options.minFollowers : 14_000;
 
-  const runUrl = `${APIFY_BASE}/acts/${SEARCH_ACTOR}/run-sync-get-dataset-items?token=${token}&timeout=90`;
-
-  const inputPayload = {
-    search: options.keyword,
-    searchType: 'popular',
-    searchLimit: limit
-  };
-
-  const response = await fetch(runUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(inputPayload)
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Apify Instagram search failed (${response.status}): ${errText}`);
+  const cleanKeyword = sanitizeForInstagramSearch(options.keyword);
+  if (!cleanKeyword) {
+    return [];
   }
 
-  const items: any[] = await response.json();
-  if (!Array.isArray(items) || items.length === 0) {
+  const runUrl = `${APIFY_BASE}/acts/${SEARCH_ACTOR}/run-sync-get-dataset-items?token=${token}&timeout=90`;
+
+  const fetchReelsForSearch = async (searchTerm: string): Promise<any[]> => {
+    const inputPayload = {
+      search: searchTerm,
+      searchType: 'popular',
+      searchLimit: limit
+    };
+
+    try {
+      const response = await fetch(runUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(inputPayload)
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.warn(`Apify Instagram search warning for "${searchTerm}" (${response.status}): ${errText}`);
+        return [];
+      }
+
+      const items: any[] = await response.json();
+      if (!Array.isArray(items) || items.length === 0) {
+        return [];
+      }
+
+      // Filter out placeholder error objects like { error: "no_items" }
+      return items.filter((it) => !it.error && (it.shortCode || it.url || it.ownerUsername || it.code));
+    } catch (err: any) {
+      console.warn(`Apify Instagram query error for "${searchTerm}":`, err.message);
+      return [];
+    }
+  };
+
+  // 1. Try full sanitized keyword
+  let validItems = await fetchReelsForSearch(cleanKeyword);
+
+  // 2. If 0 items returned and query is multi-word/has filler words, fallback to core search term
+  if (validItems.length === 0) {
+    const coreTerm = extractCoreSearchTerm(cleanKeyword);
+    if (coreTerm && coreTerm.toLowerCase() !== cleanKeyword.toLowerCase()) {
+      validItems = await fetchReelsForSearch(coreTerm);
+    }
+  }
+
+  if (validItems.length === 0) {
     return [];
   }
 
   // Filter for video clips / reels
-  const reelItems = items.filter(
+  const reelItems = validItems.filter(
     (it) => it.productType === 'clips' || it.videoPlayCount > 0 || it.videoDuration > 0 || it.type === 'Video'
   );
 
-  const rawReels = reelItems.length > 0 ? reelItems : items;
+  const rawReels = reelItems.length > 0 ? reelItems : validItems;
 
   // 1. First filter: only consider reels reaching the minimum views threshold (in Lakhs or Millions)
   const highViewItems = rawReels.filter((item) => {
