@@ -72,14 +72,13 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 2. Query YouTube if needed (strictly last 48 hours & >= 2.5x reach)
+      // 2. Query YouTube if needed (cascades: 48h -> 4 days -> 6 days if 0 matches)
       const kwCandidates: OutlierCandidate[] = [];
       if (platform === 'all' || platform === 'youtube') {
         try {
           const yt = await searchYouTubeOutliers({
             keyword: kw,
             maxResults: 15,
-            publishedAfterDays: 2, // Strictly last 48 hours
             minViews,
             minSubscribers: minFollowers,
             minFollowerRatio
@@ -90,7 +89,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 3. Query Instagram (Apify) if needed (strictly last 48 hours & >= 2.5x reach)
+      // 3. Query Instagram (Apify) if needed (cascades: 48h -> 4 days -> 6 days if 0 matches)
       if (platform === 'all' || platform === 'instagram') {
         try {
           const ig = await searchInstagramOutliers({
@@ -98,7 +97,6 @@ export async function POST(req: NextRequest) {
             searchLimit: 20,
             minViews,
             minFollowers,
-            maxAgeHours: 48, // Strictly last 48 hours
             minFollowerRatio
           });
           kwCandidates.push(...ig);

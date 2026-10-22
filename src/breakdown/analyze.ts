@@ -91,10 +91,12 @@ export async function analyzeOutlierVideo(
       candidate.url,
       candidate.thumbnailUrl,
       candidate.id,
-      { maxFrames: 6, sampleDurationSeconds: 6, timeoutMs: 35000 }
+      { maxFrames: 6, sampleDurationSeconds: 6, timeoutMs: 35000 },
+      candidate.videoUrl,
+      candidate.mediaUrls
     );
   } catch (err: any) {
-    console.warn('[analyzeOutlierVideo] FFmpeg frame extraction note:', err.message);
+    console.warn('[analyzeOutlierVideo] Frame extraction note:', err.message);
   }
 
   // 10. Execute AI Agent with System Prompt (analyzing FFmpeg frames)

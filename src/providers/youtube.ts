@@ -38,10 +38,13 @@ function getApiKey(): string {
  * Searches YouTube for recent niche videos and returns outlier-scored candidates.
  * Strictly searches last 48 hours by default.
  */
-export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Promise<OutlierCandidate[]> {
+async function searchYouTubeOutliersForDays(
+  options: YouTubeSearchOptions,
+  days: number,
+  windowTag: '48h' | '4d' | '6d'
+): Promise<OutlierCandidate[]> {
   const apiKey = getApiKey();
   const maxResults = options.maxResults || 15;
-  const days = options.publishedAfterDays || 2; // Strictly 2 days (48 hours)
   const minViews = typeof options.minViews === 'number' ? options.minViews : 100_000;
   const minSubscribers = typeof options.minSubscribers === 'number' ? options.minSubscribers : 14_000;
 
@@ -146,6 +149,7 @@ export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Prom
       id: `yt_${videoId}`,
       platform: 'youtube',
       url: `https://www.youtube.com/watch?v=${videoId}`,
+      timeWindow: windowTag,
       title: cleanTitle,
       caption: cleanDesc,
       thumbnailUrl,
@@ -187,6 +191,43 @@ export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Prom
   }
 
   return candidates;
+}
+
+/**
+ * Searches YouTube for recent niche videos and returns outlier-scored candidates.
+ * Cascades strictly from 48 hours -> 4 days -> 6 days if 0 matches are produced.
+ */
+export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Promise<OutlierCandidate[]> {
+  // If specific days given (and not default), run that directly
+  if (options.publishedAfterDays && options.publishedAfterDays !== 2) {
+    const tag = options.publishedAfterDays <= 2 ? '48h' : options.publishedAfterDays <= 4 ? '4d' : '6d';
+    return searchYouTubeOutliersForDays(options, options.publishedAfterDays, tag as any);
+  }
+
+  // Cascading time window logic:
+  // Step 1: Strictly try 48 hours first (2 days)
+  const candidates48h = await searchYouTubeOutliersForDays(options, 2, '48h');
+  if (candidates48h.length > 0) {
+    return candidates48h;
+  }
+
+  // Step 2: If 48 hours window produces 0 matches, scrape 4 days back (96 hours)
+  try {
+    const candidates4d = await searchYouTubeOutliersForDays(options, 4, '4d');
+    if (candidates4d.length > 0) {
+      return candidates4d;
+    }
+  } catch (err: any) {
+    console.warn(`[YouTube] 4-day fallback warning: ${err.message}`);
+  }
+
+  // Step 3: If 4 days produces 0 matches, fall back to 6 days back (144 hours)
+  try {
+    return await searchYouTubeOutliersForDays(options, 6, '6d');
+  } catch (err: any) {
+    console.warn(`[YouTube] 6-day fallback warning: ${err.message}`);
+    return [];
+  }
 }
 
 /**

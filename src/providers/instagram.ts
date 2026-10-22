@@ -148,114 +148,131 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
     ? await getInstagramCreatorProfilesBatch(usernamesToFetch, token)
     : new Map<string, InstagramProfileCacheEntry>();
 
-  const candidates: OutlierCandidate[] = [];
+  const buildCandidatesForWindow = (maxHours: number, windowTag: '48h' | '4d' | '6d'): OutlierCandidate[] => {
+    const list: OutlierCandidate[] = [];
+    for (const item of highViewItems) {
+      const playCount = item.videoPlayCount || item.videoViewCount || item.viewsCount || item.likesCount * 12 || 0;
+      const likesCount = item.likesCount || 0;
+      const commentsCount = item.commentsCount || 0;
+      const caption = item.caption || item.text || '';
+      const code = item.shortCode || item.code || extractInstagramShortcode(item.url || '');
+      const reelUrl = item.url || (code ? `https://www.instagram.com/reel/${code}/` : '');
+      const username = (item.ownerUsername || '').toLowerCase();
 
-  for (const item of highViewItems) {
-    const playCount = item.videoPlayCount || item.videoViewCount || item.viewsCount || item.likesCount * 12 || 0;
-    const likesCount = item.likesCount || 0;
-    const commentsCount = item.commentsCount || 0;
-    const caption = item.caption || item.text || '';
-    const code = item.shortCode || item.code || extractInstagramShortcode(item.url || '');
-    const reelUrl = item.url || (code ? `https://www.instagram.com/reel/${code}/` : '');
-    const username = (item.ownerUsername || '').toLowerCase();
+      // 3. Creator audience filter: must have followers >= minFollowers (e.g. >14k)
+      const profile = profilesMap.get(username);
+      const followerCount = profile?.followersCount ?? 0;
 
-    // 3. Creator audience filter: must have followers >= minFollowers (e.g. >14k)
-    const profile = profilesMap.get(username);
-    const followerCount = profile?.followersCount ?? 0;
+      if (minFollowers > 0 && profile && followerCount > 0 && followerCount < minFollowers) {
+        continue; // Filter out creators with under 14k followers
+      }
 
-    if (minFollowers > 0 && profile && followerCount > 0 && followerCount < minFollowers) {
-      continue; // Filter out creators with under 14k followers
-    }
-
-    // 4. Strict 48-hour post date filter
-    const maxAgeHours = typeof options.maxAgeHours === 'number' ? options.maxAgeHours : 48;
-    if (item.timestamp && maxAgeHours > 0) {
-      const pubMs = new Date(item.timestamp).getTime();
-      if (!isNaN(pubMs)) {
-        const ageHours = (Date.now() - pubMs) / (1000 * 60 * 60);
-        if (ageHours > maxAgeHours) {
-          continue; // Filter out content older than 48 hours!
+      // Time window filter: 48h -> 4d -> 6d cascade
+      if (item.timestamp && maxHours > 0) {
+        const pubMs = new Date(item.timestamp).getTime();
+        if (!isNaN(pubMs)) {
+          const ageHours = (Date.now() - pubMs) / (1000 * 60 * 60);
+          if (ageHours > maxHours) {
+            continue; // Filter out content older than window!
+          }
         }
       }
-    }
 
-    // In Instagram popular search, reels appear because they popped off.
-    // Approximate creator median views: estimate from follower count or play count baseline
-    const estimatedMedian = followerCount > 0
-      ? Math.max(1000, Math.round(followerCount * 0.15))
-      : Math.max(1000, Math.round(playCount * 0.18));
+      // In Instagram popular search, reels appear because they popped off.
+      // Approximate creator median views: estimate from follower count or play count baseline
+      const estimatedMedian = followerCount > 0
+        ? Math.max(1000, Math.round(followerCount * 0.15))
+        : Math.max(1000, Math.round(playCount * 0.18));
 
-    const viewToFollowerRatio = followerCount > 0
-      ? Math.round((playCount / followerCount) * 10) / 10
-      : 0;
+      const viewToFollowerRatio = followerCount > 0
+        ? Math.round((playCount / followerCount) * 10) / 10
+        : 0;
 
-    // 5. Follower reach filter: default min 2.5x reach required
-    // (e.g. 9.4L follower account getting 2.9L views is 0.3x reach => DISQUALIFIED)
-    const minFollowerRatio = typeof options.minFollowerRatio === 'number' ? options.minFollowerRatio : 2.5;
-    if (minFollowerRatio > 0 && followerCount > 0 && viewToFollowerRatio < minFollowerRatio) {
-      continue; // Skip! Views must be >= 2.5x follower count to be a true outlier
-    }
+      // 5. Follower reach filter: default min 2.5x reach required
+      const minFollowerRatio = typeof options.minFollowerRatio === 'number' ? options.minFollowerRatio : 2.5;
+      if (minFollowerRatio > 0 && followerCount > 0 && viewToFollowerRatio < minFollowerRatio) {
+        continue; // Skip! Views must be >= 2.5x follower count to be a true outlier
+      }
 
-    const score = calculateOutlierScore({
-      viewCount: playCount,
-      medianViews: estimatedMedian,
-      publishedAt: item.timestamp || new Date().toISOString(),
-      likeCount: likesCount,
-      commentCount: commentsCount,
-      titleOrCaption: caption,
-      followerCount: followerCount > 0 ? followerCount : undefined
-    });
-
-    const music = item.musicInfo?.song_name
-      ? `${item.musicInfo.song_name} - ${item.musicInfo.artist_name || ''}`
-      : item.audioUrl
-      ? 'Original Audio'
-      : undefined;
-
-    candidates.push({
-      id: `ig_${code || Math.random().toString(36).substring(7)}`,
-      platform: 'instagram',
-      url: reelUrl,
-      title: extractFirstLineHook(caption) || `Reel by @${item.ownerUsername || 'creator'}`,
-      caption,
-      thumbnailUrl: item.displayUrl || item.thumbnailUrl || '',
-      publishedAt: item.timestamp || new Date().toISOString(),
-      viewCount: playCount,
-      likeCount: likesCount,
-      commentCount: commentsCount,
-      durationSeconds: Math.round(item.videoDuration || 0),
-      isShortOrReel: true,
-      creator: {
-        id: item.ownerId || item.ownerUsername || 'unknown',
-        username: item.ownerUsername || 'creator',
-        displayName: profile?.fullName || item.ownerFullName || item.ownerUsername || 'Instagram Creator',
-        avatarUrl: profile?.avatarUrl,
+      const score = calculateOutlierScore({
+        viewCount: playCount,
         medianViews: estimatedMedian,
-        subscriberOrFollowerCount: followerCount > 0 ? followerCount : undefined,
-        profileUrl: item.ownerUsername ? `https://www.instagram.com/${item.ownerUsername}/` : undefined
-      },
-      outlierMultiplier: Math.round((playCount / Math.max(estimatedMedian, 100)) * 10) / 10,
-      viewToFollowerRatio,
-      outlierScore: score.totalScore,
-      matchedKeyword: options.keyword,
-      whyOutlier: score.whyOutlier,
-      musicOrAudio: music,
-      formatType: detectReelFormat(caption),
-      sopTaxonomy: deriveSOPTaxonomy({
-        title: extractFirstLineHook(caption) || `Reel by @${item.ownerUsername || 'creator'}`,
-        caption,
-        multiplier: Math.round((playCount / Math.max(estimatedMedian, 100)) * 10) / 10,
-        formatType: detectReelFormat(caption),
+        publishedAt: item.timestamp || new Date().toISOString(),
         likeCount: likesCount,
         commentCount: commentsCount,
+        titleOrCaption: caption,
+        followerCount: followerCount > 0 ? followerCount : undefined
+      });
+
+      const music = item.musicInfo?.song_name
+        ? `${item.musicInfo.song_name} - ${item.musicInfo.artist_name || ''}`
+        : item.audioUrl
+        ? 'Original Audio'
+        : undefined;
+
+      list.push({
+        id: `ig_${code || Math.random().toString(36).substring(7)}`,
+        platform: 'instagram',
+        url: reelUrl,
+        videoUrl: item.videoUrl || item.video_url || undefined,
+        mediaUrls: Array.isArray(item.images) ? item.images : undefined,
+        timeWindow: windowTag,
+        title: extractFirstLineHook(caption) || `Reel by @${item.ownerUsername || 'creator'}`,
+        caption,
+        thumbnailUrl: item.displayUrl || item.thumbnailUrl || '',
+        publishedAt: item.timestamp || new Date().toISOString(),
         viewCount: playCount,
-        followerCount,
-        viewToFollowerRatio
-      })
-    });
+        likeCount: likesCount,
+        commentCount: commentsCount,
+        durationSeconds: Math.round(item.videoDuration || 0),
+        isShortOrReel: true,
+        creator: {
+          id: item.ownerId || item.ownerUsername || 'unknown',
+          username: item.ownerUsername || 'creator',
+          displayName: profile?.fullName || item.ownerFullName || item.ownerUsername || 'Instagram Creator',
+          avatarUrl: profile?.avatarUrl,
+          medianViews: estimatedMedian,
+          subscriberOrFollowerCount: followerCount > 0 ? followerCount : undefined,
+          profileUrl: item.ownerUsername ? `https://www.instagram.com/${item.ownerUsername}/` : undefined
+        },
+        outlierMultiplier: Math.round((playCount / Math.max(estimatedMedian, 100)) * 10) / 10,
+        viewToFollowerRatio,
+        outlierScore: score.totalScore,
+        matchedKeyword: options.keyword,
+        whyOutlier: score.whyOutlier,
+        musicOrAudio: music,
+        formatType: detectReelFormat(caption),
+        sopTaxonomy: deriveSOPTaxonomy({
+          title: extractFirstLineHook(caption) || `Reel by @${item.ownerUsername || 'creator'}`,
+          caption,
+          multiplier: Math.round((playCount / Math.max(estimatedMedian, 100)) * 10) / 10,
+          formatType: detectReelFormat(caption),
+          likeCount: likesCount,
+          commentCount: commentsCount,
+          viewCount: playCount,
+          followerCount,
+          viewToFollowerRatio
+        })
+      });
+    }
+    return list;
+  };
+
+  // Cascading time window logic:
+  // 1. Strictly try 48 hours first
+  const candidates48h = buildCandidatesForWindow(48, '48h');
+  if (candidates48h.length > 0) {
+    return candidates48h;
   }
 
-  return candidates;
+  // 2. If 48 hours window produces 0 matches, scrape 4 days back (96 hours)
+  const candidates4d = buildCandidatesForWindow(96, '4d');
+  if (candidates4d.length > 0) {
+    return candidates4d;
+  }
+
+  // 3. If that produces 0 matches, fall back to 6 days back (144 hours)
+  return buildCandidatesForWindow(144, '6d');
 }
 
 /**
@@ -316,6 +333,8 @@ export async function getInstagramReelByUrl(rawUrl: string): Promise<OutlierCand
     id: `ig_${code}`,
     platform: 'instagram',
     url: cleanUrl,
+    videoUrl: item.videoUrl || item.video_url || undefined,
+    mediaUrls: Array.isArray(item.images) ? item.images : (item.childPosts ? item.childPosts.map((c: any) => c.displayUrl).filter(Boolean) : undefined),
     title: extractFirstLineHook(caption) || `Instagram Reel (${code})`,
     caption,
     thumbnailUrl: item.displayUrl || item.thumbnailUrl || '',

@@ -59,6 +59,9 @@ export interface OutlierCandidate {
   isShortOrReel: boolean;
   tags?: string[];
   sopTaxonomy?: SOPTaxonomy;
+  videoUrl?: string;
+  mediaUrls?: string[];
+  timeWindow?: '48h' | '4d' | '6d';
 }
 
 export interface RealComment {

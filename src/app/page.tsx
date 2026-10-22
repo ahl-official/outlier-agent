@@ -1581,6 +1581,19 @@ export default function HomePage() {
                       <span className={`platform-pill ${c.platform}`}>
                         {c.platform === 'youtube' ? '▶ YouTube' : '📸 IG Reel'}
                       </span>
+                      {c.timeWindow && (
+                        <span style={{
+                          padding: '2px 7px',
+                          borderRadius: '4px',
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          background: c.timeWindow === '48h' ? 'rgba(16, 185, 129, 0.9)' : 'rgba(234, 179, 8, 0.9)',
+                          color: '#000',
+                          letterSpacing: '0.04em'
+                        }}>
+                          {c.timeWindow === '48h' ? '⚡ 48h' : c.timeWindow === '4d' ? '⏳ 4d' : '⏳ 6d'}
+                        </span>
+                      )}
                       {c.durationSeconds ? (
                         <span className="duration-tag">{c.durationSeconds}s</span>
                       ) : null}
