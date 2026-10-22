@@ -318,6 +318,27 @@ export default function HomePage() {
     todayIST: string;
     memberCounts: Record<string, number>;
     existingUrls: string[];
+    existingRecords: Array<{
+      normalizedUrl: string;
+      rawUrl: string;
+      submittedBy: string;
+      timestamp: string;
+      brand?: string;
+      platform?: string;
+      videoTitle: string;
+      creator?: string;
+      followers?: string;
+      views?: string;
+      reachRatio?: string;
+      outlierMultiplier?: string;
+      tier?: string;
+      visualHook?: string;
+      audioStrategy?: string;
+      secretFormula?: string;
+      status: string;
+      feedback?: string;
+      rowNumber: number;
+    }>;
   }>({
     sheetUrl: 'https://docs.google.com/spreadsheets/d/14nj56PxfqLHcv8xTB03_RKSfyDD2s-C9Psk3LMnWGdU/edit',
     folderUrl: 'https://drive.google.com/drive/folders/0AIG06pZpg4KBUk9PVA',
@@ -325,8 +346,11 @@ export default function HomePage() {
     todayCount: 0,
     todayIST: '',
     memberCounts: {},
-    existingUrls: []
+    existingUrls: [],
+    existingRecords: []
   });
+  const [trackerFilterMember, setTrackerFilterMember] = useState<string>('All');
+  const [trackerSearchQuery, setTrackerSearchQuery] = useState<string>('');
   const [isLoggingToSheet, setIsLoggingToSheet] = useState<boolean>(false);
   const [sheetDuplicateInfo, setSheetDuplicateInfo] = useState<{
     isDuplicate: boolean;
@@ -416,6 +440,16 @@ export default function HomePage() {
       if (data.success) {
         if (data.teamMembers && Array.isArray(data.teamMembers) && data.teamMembers.length > 0) {
           setTeamMembers(data.teamMembers);
+          // If active teamMember is default placeholder or not in the real team list, auto-select first real member
+          setTeamMember(prev => {
+            const exists = data.teamMembers.some((m: TeamMemberConfig) => m.name.toLowerCase() === (prev || '').toLowerCase());
+            if (!exists && data.teamMembers[0]?.name) {
+              const firstMember = data.teamMembers[0].name;
+              if (typeof window !== 'undefined') localStorage.setItem('social_member_name', firstMember);
+              return firstMember;
+            }
+            return prev;
+          });
         }
         setTrackerData({
           sheetUrl: data.sheetUrl,
@@ -424,7 +458,8 @@ export default function HomePage() {
           todayCount: data.todayCount || 0,
           todayIST: data.todayIST || '',
           memberCounts: data.memberCounts || {},
-          existingUrls: data.existingUrls || []
+          existingUrls: data.existingUrls || [],
+          existingRecords: data.existingRecords || []
         });
       }
     } catch (err) {
@@ -526,21 +561,23 @@ export default function HomePage() {
         setSheetDuplicateInfo(null);
         await fetchTrackerData();
         if (!silent) {
-          showToast(`✅ Saved to Google Sheet! (${data.memberTodayCount}/10 completed today by ${teamMember})`);
+          showToast(`✅ Saved to Google Sheet! (${data.memberTodayCount}/${data.quotaTarget || 10} completed today by ${teamMember})`);
         }
         return { success: true, duplicate: false, message: data.message };
       } else {
-        if (!silent) showToast(data.error || 'Failed to save to Google Sheet');
-        return { success: false, message: data.error };
+        const errorMsg = data.error || data.message || 'Failed to save to Google Sheet';
+        if (!silent) showToast(errorMsg);
+        return { success: false, message: errorMsg };
       }
     } catch (err: any) {
       setIsLoggingToSheet(false);
-      if (!silent) showToast(err.message || 'Error connecting to Google Sheets');
-      return { success: false, message: err.message };
+      const errText = err.message || 'Error connecting to Google Sheets';
+      if (!silent) showToast(errText);
+      return { success: false, message: errText };
     }
   };
 
-  const handleSendToSirOnWhatsApp = () => {
+  const handleSendToSirOnWhatsApp = async () => {
     const b = whatsAppTarget?.breakdown || currentBreakdown;
     const c = whatsAppTarget?.candidate || currentCandidate;
     if (!b && !c) {
@@ -570,8 +607,8 @@ export default function HomePage() {
       window.open(url, '_blank', 'noopener,noreferrer');
     }
     // Auto-save to Google Sheet for team quota tracking and duplicate check
-    handleLogToSheet(b, c, false);
-    showToast('Redirecting to WhatsApp & saving to Google Sheet! 🚀');
+    showToast('Redirecting to WhatsApp & saving to Google Sheet... 🚀');
+    await handleLogToSheet(b, c, false);
     setShowWhatsAppModal(false);
   };
 
@@ -825,7 +862,9 @@ export default function HomePage() {
       const data = await res.json();
       if (data.success && data.items) {
         setBoardItems(data.items);
-        showToast('Saved to Outliers Library!');
+        // Automatically sync to Google Sheet so outliers are never missed
+        handleLogToSheet(breakdown, candidate, true);
+        showToast('Saved to Outliers Library & syncing to Google Sheet! 🚀');
       } else {
         showToast(data.error || 'Failed to add to library');
       }
@@ -2548,6 +2587,21 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
                         >
                           <WhatsAppIcon size={12} color="#25D366" />
                         </button>
+                        {(() => {
+                          const norm = normalizeUrlClient(item.candidate.url);
+                          const isInSheet = trackerData.existingUrls.includes(norm);
+                          return (
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              style={isInSheet ? { padding: '4px 7px', color: '#34d399', borderColor: '#059669', background: 'rgba(16, 185, 129, 0.1)' } : { padding: '4px 7px', color: '#34d399' }}
+                              title={isInSheet ? "Logged in Sir's Google Sheet" : "Save this outlier to Sir's Google Sheet"}
+                              onClick={() => handleLogToSheet(item.breakdown, item.candidate, false)}
+                            >
+                              <FileSpreadsheet size={12} /> {isInSheet ? 'Logged' : 'Sheet'}
+                            </button>
+                          );
+                        })()}
                       </div>
 
                       <div style={{ display: 'flex', gap: '4px' }}>
@@ -2642,6 +2696,21 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
                         >
                           <WhatsAppIcon size={12} color="#25D366" />
                         </button>
+                        {(() => {
+                          const norm = normalizeUrlClient(item.candidate.url);
+                          const isInSheet = trackerData.existingUrls.includes(norm);
+                          return (
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              style={isInSheet ? { padding: '4px 7px', color: '#34d399', borderColor: '#059669', background: 'rgba(16, 185, 129, 0.1)' } : { padding: '4px 7px', color: '#34d399' }}
+                              title={isInSheet ? "Logged in Sir's Google Sheet" : "Save this outlier to Sir's Google Sheet"}
+                              onClick={() => handleLogToSheet(item.breakdown, item.candidate, false)}
+                            >
+                              <FileSpreadsheet size={12} /> {isInSheet ? 'Logged' : 'Sheet'}
+                            </button>
+                          );
+                        })()}
                       </div>
 
                       <div style={{ display: 'flex', gap: '4px' }}>
@@ -2990,6 +3059,241 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Live Google Sheet Outliers Feed Table */}
+          <div className="glass-panel" style={{ padding: '24px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', marginBottom: '18px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '1.25rem' }}>📋</span>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                    Live Google Sheet Outliers Log
+                  </h3>
+                  <span
+                    style={{
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      color: '#34d399',
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                      padding: '2px 10px',
+                      borderRadius: '9999px',
+                      fontSize: '0.74rem',
+                      fontWeight: 700
+                    }}
+                  >
+                    🟢 {trackerData.existingRecords.length} Outliers Recorded
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                  Real-time sync from Sir's shared spreadsheet ('Outliers Tracker' tab).
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  placeholder="Filter by title or creator..."
+                  value={trackerSearchQuery}
+                  onChange={(e) => setTrackerSearchQuery(e.target.value)}
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.45)',
+                    border: '1px solid var(--border-highlight)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '6px 12px',
+                    color: '#fff',
+                    fontSize: '0.82rem',
+                    width: '200px'
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => {
+                    fetchTrackerData();
+                    showToast('Refreshed live rows from Google Sheet! 🔄');
+                  }}
+                  title="Reload rows from Google Sheet"
+                >
+                  <RefreshCw size={13} /> Refresh
+                </button>
+                <a
+                  href={trackerData.sheetUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-sheet"
+                  style={{ fontSize: '0.78rem', padding: '6px 12px', textDecoration: 'none' }}
+                >
+                  <FileSpreadsheet size={13} /> Open Sheet ↗
+                </a>
+              </div>
+            </div>
+
+            {/* Member filter tabs */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Filter Member:</span>
+              <button
+                type="button"
+                onClick={() => setTrackerFilterMember('All')}
+                style={{
+                  padding: '4px 12px',
+                  borderRadius: '9999px',
+                  border: trackerFilterMember === 'All' ? '1px solid var(--gold-400)' : '1px solid var(--border-subtle)',
+                  background: trackerFilterMember === 'All' ? 'var(--gold-400)' : 'rgba(0,0,0,0.3)',
+                  color: trackerFilterMember === 'All' ? '#000' : 'var(--text-muted)',
+                  fontSize: '0.76rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                All Members ({trackerData.existingRecords.length})
+              </button>
+              {teamMembers.map(m => {
+                const count = trackerData.existingRecords.filter(r => r.submittedBy.toLowerCase().includes(m.name.toLowerCase())).length;
+                const isSelected = trackerFilterMember.toLowerCase() === m.name.toLowerCase();
+                return (
+                  <button
+                    key={m.id || m.name}
+                    type="button"
+                    onClick={() => setTrackerFilterMember(m.name)}
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: '9999px',
+                      border: isSelected ? '1px solid var(--cyan-400)' : '1px solid var(--border-subtle)',
+                      background: isSelected ? 'var(--cyan-400)' : 'rgba(0,0,0,0.3)',
+                      color: isSelected ? '#000' : 'var(--text-muted)',
+                      fontSize: '0.76rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {m.name} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Records Table */}
+            {(() => {
+              const filtered = trackerData.existingRecords.filter(r => {
+                const matchesMember = trackerFilterMember === 'All' || r.submittedBy.toLowerCase().includes(trackerFilterMember.toLowerCase());
+                const query = trackerSearchQuery.toLowerCase().trim();
+                const matchesSearch = !query || 
+                  (r.videoTitle || '').toLowerCase().includes(query) || 
+                  (r.creator || '').toLowerCase().includes(query) ||
+                  (r.rawUrl || '').toLowerCase().includes(query);
+                return matchesMember && matchesSearch;
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <div style={{ textAlign: 'center', padding: '40px 20px', background: 'rgba(0,0,0,0.25)', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--border-subtle)' }}>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', margin: '0 0 10px 0' }}>
+                      {trackerData.existingRecords.length === 0
+                        ? "No outliers have been saved to Google Sheets yet! Use the 'Sheet' or 'Save' button on any video in Discovery Radar or Deep Dive to log your first outlier."
+                        : "No logged outliers match the current filter."}
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ overflowX: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(15, 23, 42, 0.9)', borderBottom: '1px solid var(--border-highlight)', color: 'var(--text-muted)' }}>
+                        <th style={{ padding: '10px 12px', width: '40px' }}>#</th>
+                        <th style={{ padding: '10px 12px' }}>Platform & Video Title</th>
+                        <th style={{ padding: '10px 12px' }}>Creator</th>
+                        <th style={{ padding: '10px 12px' }}>Reach / Views</th>
+                        <th style={{ padding: '10px 12px' }}>Logged By</th>
+                        <th style={{ padding: '10px 12px' }}>Timestamp</th>
+                        <th style={{ padding: '10px 12px' }}>Sir's Status</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((r, i) => {
+                        const isApproved = r.status.toLowerCase().includes('approved');
+                        const isRejected = r.status.toLowerCase().includes('rejected');
+                        const statusClass = isApproved ? 'sheet-status-approved' : (isRejected ? 'sheet-status-rejected' : 'sheet-status-pending');
+                        const isIG = (r.platform || '').toLowerCase().includes('instagram') || (r.rawUrl || '').includes('instagram.com');
+
+                        return (
+                          <tr
+                            key={r.rawUrl + i}
+                            style={{
+                              borderBottom: '1px solid var(--border-subtle)',
+                              background: i % 2 === 0 ? 'rgba(0, 0, 0, 0.2)' : 'transparent',
+                              transition: 'background 0.15s'
+                            }}
+                          >
+                            <td style={{ padding: '10px 12px', color: 'var(--text-dim)', fontWeight: 600 }}>
+                              {r.rowNumber || (i + 2)}
+                            </td>
+                            <td style={{ padding: '10px 12px', maxWidth: '320px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+                                <span className={`platform-pill ${isIG ? 'instagram' : 'youtube'}`} style={{ fontSize: '0.66rem', padding: '1px 6px' }}>
+                                  {isIG ? 'IG Reels' : 'YT Shorts'}
+                                </span>
+                                {r.tier && (
+                                  <span style={{ fontSize: '0.68rem', color: 'var(--gold-400)', fontWeight: 600 }}>
+                                    {r.tier}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontWeight: 600, color: '#fff', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {r.videoTitle || 'Untitled Video'}
+                              </div>
+                            </td>
+                            <td style={{ padding: '10px 12px', color: 'var(--text-muted)' }}>
+                              {r.creator || '—'}
+                            </td>
+                            <td style={{ padding: '10px 12px' }}>
+                              <div style={{ fontWeight: 700, color: '#34d399' }}>
+                                {r.reachRatio ? `${r.reachRatio} Reach` : (r.outlierMultiplier ? `${r.outlierMultiplier} Multiplier` : '—')}
+                              </div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                                {r.views || '—'} views
+                              </div>
+                            </td>
+                            <td style={{ padding: '10px 12px' }}>
+                              <span style={{ background: 'rgba(245, 158, 11, 0.12)', color: 'var(--gold-400)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.74rem', fontWeight: 700 }}>
+                                {r.submittedBy}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px 12px', color: 'var(--text-dim)', fontSize: '0.76rem', whiteSpace: 'nowrap' }}>
+                              {r.timestamp}
+                            </td>
+                            <td style={{ padding: '10px 12px' }}>
+                              <span className={`sheet-status-badge ${statusClass}`} style={{ fontSize: '0.7rem' }}>
+                                {r.status}
+                              </span>
+                              {r.feedback && (
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                  💬 {r.feedback}
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              <a
+                                href={r.rawUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn btn-outline btn-sm"
+                                style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                title="Open original video"
+                              >
+                                Video <ExternalLink size={11} />
+                              </a>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
         </main>
       )}

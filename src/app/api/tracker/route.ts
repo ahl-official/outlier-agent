@@ -99,16 +99,41 @@ export async function GET() {
       rawUrl: string;
       submittedBy: string;
       timestamp: string;
-      status: string;
+      brand?: string;
+      platform?: string;
       videoTitle: string;
+      creator?: string;
+      followers?: string;
+      views?: string;
+      reachRatio?: string;
+      outlierMultiplier?: string;
+      tier?: string;
+      visualHook?: string;
+      audioStrategy?: string;
+      secretFormula?: string;
+      status: string;
+      feedback?: string;
+      rowNumber: number;
     }> = [];
 
-    rows.forEach(row => {
+    rows.forEach((row, idx) => {
       const timestamp = row[0] || '';
       const submittedBy = (row[1] || 'Unknown').trim();
+      const brand = row[2] || '';
+      const platform = row[3] || '';
       const videoTitle = row[4] || '';
       const rawUrl = (row[5] || '').trim();
+      const creator = row[6] || '';
+      const followers = row[7] || '';
+      const views = row[8] || '';
+      const reachRatio = row[9] || '';
+      const outlierMultiplier = row[10] || '';
+      const tier = row[11] || '';
+      const visualHook = row[12] || '';
+      const audioStrategy = row[13] || '';
+      const secretFormula = row[14] || '';
       const status = row[15] || 'Pending Review';
+      const feedback = row[16] || '';
 
       if (rawUrl) {
         const normalized = normalizeVideoUrl(rawUrl);
@@ -117,8 +142,21 @@ export async function GET() {
           rawUrl,
           submittedBy,
           timestamp,
+          brand,
+          platform,
+          videoTitle,
+          creator,
+          followers,
+          views,
+          reachRatio,
+          outlierMultiplier,
+          tier,
+          visualHook,
+          audioStrategy,
+          secretFormula,
           status,
-          videoTitle
+          feedback,
+          rowNumber: idx + 2
         });
       }
 
@@ -140,7 +178,8 @@ export async function GET() {
       memberCounts,
       teamMembers: getTeamMembers(),
       existingCount: existingRecords.length,
-      existingUrls: existingRecords.map(r => r.normalizedUrl)
+      existingUrls: existingRecords.map(r => r.normalizedUrl),
+      existingRecords
     });
   } catch (error: any) {
     console.error('Error fetching tracker data:', error);
@@ -148,6 +187,7 @@ export async function GET() {
       {
         success: false,
         error: error.message || 'Failed to fetch tracker data',
+        message: error.message || 'Failed to fetch tracker data',
         sheetUrl: SHEET_URL,
         folderUrl: FOLDER_URL
       },
@@ -178,7 +218,7 @@ export async function POST(req: NextRequest) {
 
     if (!videoUrl) {
       return NextResponse.json(
-        { success: false, message: 'Video URL is required' },
+        { success: false, error: 'Video URL is required', message: 'Video URL is required' },
         { status: 400 }
       );
     }
@@ -186,7 +226,11 @@ export async function POST(req: NextRequest) {
     const sheets = getGoogleSheetsClient();
     if (!sheets) {
       return NextResponse.json(
-        { success: false, message: 'Google Sheets credentials not configured. Please add Google Service Account credentials to environment variables.' },
+        {
+          success: false,
+          error: 'Google Sheets credentials not configured. Please add GOOGLE_SERVICE_ACCOUNT_JSON to Vercel/Environment variables.',
+          message: 'Google Sheets credentials not configured. Please add GOOGLE_SERVICE_ACCOUNT_JSON to Vercel/Environment variables.'
+        },
         { status: 500 }
       );
     }
