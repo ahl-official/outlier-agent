@@ -788,6 +788,11 @@ export default function HomePage() {
         })
       });
 
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server responded with status ${res.status}`);
+      }
+
       const data = await res.json();
       if (data.success) {
         const found = data.candidates || [];
@@ -801,7 +806,12 @@ export default function HomePage() {
         showToast(data.error || 'Failed to scan radar');
       }
     } catch (err: any) {
-      showToast(err.message || 'Network error scanning radar');
+      const msg = err.message || '';
+      if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('network') || msg.includes('504')) {
+        showToast('Search timed out on server. Try selecting "YouTube" only or lowering filters for instant results.');
+      } else {
+        showToast(msg || 'Error scanning radar');
+      }
     } finally {
       setIsScanning(false);
       setScanMessage('');

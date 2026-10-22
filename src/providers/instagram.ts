@@ -57,11 +57,12 @@ export async function getInstagramCreatorProfilesBatch(
   if (toFetch.length === 0) return result;
 
   try {
-    const runUrl = `${APIFY_BASE}/acts/${PROFILE_ACTOR}/run-sync-get-dataset-items?token=${token}&timeout=60`;
+    const runUrl = `${APIFY_BASE}/acts/${PROFILE_ACTOR}/run-sync-get-dataset-items?token=${token}&timeout=25`;
     const response = await fetch(runUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ usernames: toFetch.slice(0, 15) })
+      body: JSON.stringify({ usernames: toFetch.slice(0, 20) }),
+      signal: AbortSignal.timeout(26000)
     });
 
     if (response.ok) {
@@ -131,7 +132,7 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
     return [];
   }
 
-  const runUrl = `${APIFY_BASE}/acts/${SEARCH_ACTOR}/run-sync-get-dataset-items?token=${token}&timeout=90`;
+  const runUrl = `${APIFY_BASE}/acts/${SEARCH_ACTOR}/run-sync-get-dataset-items?token=${token}&timeout=18`;
 
   const fetchReelsForSearch = async (searchTerm: string): Promise<any[]> => {
     const inputPayload = {
@@ -144,7 +145,8 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
       const response = await fetch(runUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(inputPayload)
+        body: JSON.stringify(inputPayload),
+        signal: AbortSignal.timeout(20000)
       });
 
       if (!response.ok) {

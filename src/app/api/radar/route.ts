@@ -72,36 +72,44 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 2. Query YouTube if needed (cascades: 48h -> 4 days -> 6 days if 0 matches)
+      // 2. Query YouTube & Instagram in parallel to prevent serverless function timeouts
       const kwCandidates: OutlierCandidate[] = [];
+      const queries: Promise<OutlierCandidate[]>[] = [];
+
       if (platform === 'all' || platform === 'youtube') {
-        try {
-          const yt = await searchYouTubeOutliers({
+        queries.push(
+          searchYouTubeOutliers({
             keyword: kw,
             maxResults: 15,
             minViews,
             minSubscribers: minFollowers,
             minFollowerRatio
-          });
-          kwCandidates.push(...yt);
-        } catch (err: any) {
-          console.error(`YouTube error for "${kw}":`, err.message);
-        }
+          }).catch((err: any) => {
+            console.error(`YouTube error for "${kw}":`, err.message);
+            return [];
+          })
+        );
       }
 
-      // 3. Query Instagram (Apify) if needed (cascades: 48h -> 4 days -> 6 days if 0 matches)
       if (platform === 'all' || platform === 'instagram') {
-        try {
-          const ig = await searchInstagramOutliers({
+        queries.push(
+          searchInstagramOutliers({
             keyword: kw,
             searchLimit: 20,
             minViews,
             minFollowers,
             minFollowerRatio
-          });
-          kwCandidates.push(...ig);
-        } catch (err: any) {
-          console.error(`Instagram error for "${kw}":`, err.message);
+          }).catch((err: any) => {
+            console.error(`Instagram error for "${kw}":`, err.message);
+            return [];
+          })
+        );
+      }
+
+      const results = await Promise.allSettled(queries);
+      for (const res of results) {
+        if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+          kwCandidates.push(...res.value);
         }
       }
 
@@ -129,11 +137,20 @@ export async function POST(req: NextRequest) {
     if (minViews > 0) {
       ranked = ranked.filter((c) => c.viewCount >= minViews);
     }
+    // Followers unresolved (e.g. a profile lookup that timed out) means "unknown", not "zero" —
+    // the provider already deliberately skips its own follower/reach checks in that case, so the
+    // route must not re-apply them here and strip out otherwise-valid candidates.
     if (minFollowers > 0) {
-      ranked = ranked.filter((c) => (c.creator.subscriberOrFollowerCount || 0) >= minFollowers);
+      ranked = ranked.filter((c) => {
+        const followers = c.creator.subscriberOrFollowerCount;
+        return followers === undefined || followers >= minFollowers;
+      });
     }
     if (minFollowerRatio > 0) {
-      ranked = ranked.filter((c) => (c.viewToFollowerRatio || 0) >= minFollowerRatio);
+      ranked = ranked.filter((c) => {
+        const followers = c.creator.subscriberOrFollowerCount;
+        return followers === undefined || (c.viewToFollowerRatio || 0) >= minFollowerRatio;
+      });
     }
 
     if (ranked.length > 0) {
