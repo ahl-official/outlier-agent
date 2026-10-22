@@ -783,14 +783,20 @@ export default function HomePage() {
           minMultiplier,
           minViews,
           minFollowers,
-          minFollowerRatio
+          minFollowerRatio,
+          forceRefresh: true
         })
       });
 
       const data = await res.json();
-      if (data.success && data.candidates) {
-        setRadarCandidates(data.candidates);
-        showToast(`Discovered ${data.candidates.length} ranked videos!`);
+      if (data.success) {
+        const found = data.candidates || [];
+        setRadarCandidates(found);
+        if (found.length > 0) {
+          showToast(`Discovered ${found.length} ranked videos for "${kw}"! 🔥`);
+        } else {
+          showToast(`0 outliers found for "${kw}" in last 6 days. Try lowering filters.`);
+        }
       } else {
         showToast(data.error || 'Failed to scan radar');
       }

@@ -136,21 +136,6 @@ export async function POST(req: NextRequest) {
       ranked = ranked.filter((c) => (c.viewToFollowerRatio || 0) >= minFollowerRatio);
     }
 
-    // Fallback: If live API returned 0 candidates (e.g. network timeout, rate limit, or strict 48h filter),
-    // serve existing high-performing radar outliers so the dashboard is never empty!
-    if (ranked.length === 0) {
-      const fallbackCache = getSavedRadarCache();
-      if (fallbackCache && fallbackCache.length > 0) {
-        ranked = fallbackCache.filter((c) => {
-          const viewsOk = minViews <= 0 || c.viewCount >= (minViews > 50000 ? 10000 : minViews);
-          return viewsOk;
-        });
-        if (ranked.length === 0) {
-          ranked = fallbackCache.slice(0, 8);
-        }
-      }
-    }
-
     if (ranked.length > 0) {
       saveRadarCache(ranked);
     }
