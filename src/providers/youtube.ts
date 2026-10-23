@@ -23,7 +23,7 @@ export interface YouTubeSearchOptions {
   videoDuration?: 'short' | 'any';
   minViews?: number;
   minSubscribers?: number;
-  minFollowerRatio?: number; // default 2.5x reach
+  minFollowerRatio?: number; // default 3x reach
 }
 
 function getApiKey(): string {
@@ -45,13 +45,13 @@ async function searchYouTubeOutliersForDays(
 ): Promise<OutlierCandidate[]> {
   const apiKey = getApiKey();
   const maxResults = options.maxResults || 15;
-  const minViews = typeof options.minViews === 'number' ? options.minViews : 100_000;
-  const minSubscribers = typeof options.minSubscribers === 'number' ? options.minSubscribers : 14_000;
+  const minViews = typeof options.minViews === 'number' ? options.minViews : 20_000;
+  const minSubscribers = typeof options.minSubscribers === 'number' ? options.minSubscribers : 1_000;
 
   const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  // 1. Search videos: if searching for high view outliers (lakhs/millions), prioritize viewCount order
-  const searchOrder = minViews >= 100_000 ? 'viewCount' : 'relevance';
+  // 1. Search videos: if searching for high view outliers, prioritize viewCount order
+  const searchOrder = minViews >= 20_000 ? 'viewCount' : 'relevance';
   const searchUrl = new URL(`${YOUTUBE_API_BASE}/search`);
   searchUrl.searchParams.set('part', 'snippet');
   searchUrl.searchParams.set('q', options.keyword);
@@ -104,7 +104,7 @@ async function searchYouTubeOutliersForDays(
 
     const viewCount = details ? parseInt(details.statistics?.viewCount || '0', 10) : 0;
 
-    // Filter by minViews (must be in Lakhs or Millions, e.g. >= 100k)
+    // Filter by minViews
     if (minViews > 0 && viewCount < minViews) {
       continue;
     }
@@ -139,10 +139,10 @@ async function searchYouTubeOutliersForDays(
       ? Math.round((viewCount / channelInfo.subCount) * 10) / 10
       : 0;
 
-    // Follower reach filter: default min 2.5x reach required
-    const minFollowerRatio = typeof options.minFollowerRatio === 'number' ? options.minFollowerRatio : 2.5;
+    // Follower reach filter: default min 3x reach required
+    const minFollowerRatio = typeof options.minFollowerRatio === 'number' ? options.minFollowerRatio : 3;
     if (minFollowerRatio > 0 && channelInfo.subCount > 0 && viewToFollowerRatio < minFollowerRatio) {
-      continue; // Skip videos that didn't reach min 2.5x subscribers!
+      continue; // Skip videos that didn't reach minFollowerRatio x subscribers!
     }
 
     candidates.push({

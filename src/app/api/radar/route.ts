@@ -25,10 +25,10 @@ export async function GET() {
       return c;
     })
     .filter((c) => {
-      // True Outlier Rule: Follower reach must be >= 2.5x (filters out big accounts with ordinary views)
+      // True Outlier Rule: Follower reach must be >= 3x (filters out big accounts with ordinary views)
       const followers = c.creator?.subscriberOrFollowerCount || 0;
       if (followers > 0) {
-        return (c.viewToFollowerRatio ?? 0) >= 2.5;
+        return (c.viewToFollowerRatio ?? 0) >= 3;
       }
       return true;
     });
@@ -45,9 +45,9 @@ export async function POST(req: NextRequest) {
     const keywords: string[] = body.keywords && body.keywords.length > 0 ? body.keywords : [DEFAULT_RADAR_KEYWORDS[0]];
     const platform: string = body.platform || 'all';
     const minMultiplier: number = body.minMultiplier || 0;
-    const minViews: number = typeof body.minViews === 'number' ? body.minViews : 100_000;
-    const minFollowers: number = typeof body.minFollowers === 'number' ? body.minFollowers : 14_000;
-    const minFollowerRatio: number = typeof body.minFollowerRatio === 'number' ? body.minFollowerRatio : 2.5;
+    const minViews: number = typeof body.minViews === 'number' ? body.minViews : 20_000;
+    const minFollowers: number = typeof body.minFollowers === 'number' ? body.minFollowers : 1_000;
+    const minFollowerRatio: number = typeof body.minFollowerRatio === 'number' ? body.minFollowerRatio : 3;
     const forceRefresh: boolean = !!body.forceRefresh;
 
     const candidates: OutlierCandidate[] = [];

@@ -228,9 +228,9 @@ export default function HomePage() {
   const [newKeywordInput, setNewKeywordInput] = useState<string>('');
   const [selectedPlatform, setSelectedPlatform] = useState<'all' | 'youtube' | 'instagram'>('all');
   const [minMultiplier, setMinMultiplier] = useState<number>(0);
-  const [minViews, setMinViews] = useState<number>(100_000); // 1 Lakh+ default
-  const [minFollowers, setMinFollowers] = useState<number>(14_000); // >14k default
-  const [minFollowerRatio, setMinFollowerRatio] = useState<number>(2.5); // Default >= 2.5x reach (views > 2.5x followers)
+  const [minViews, setMinViews] = useState<number>(20_000); // 20k+ default
+  const [minFollowers, setMinFollowers] = useState<number>(1_000); // >1k default
+  const [minFollowerRatio, setMinFollowerRatio] = useState<number>(3); // Default >= 3x reach (views > 3x followers)
   const [radarCandidates, setRadarCandidates] = useState<OutlierCandidate[]>([]);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanMessage, setScanMessage] = useState<string>('');
@@ -1455,6 +1455,7 @@ export default function HomePage() {
                     }}
                     title="Minimum outlier views threshold"
                   >
+                    <option value="20000">Views: 20k+ (Default)</option>
                     <option value="100000">Views: 1 Lakh+ (0.1M)</option>
                     <option value="500000">Views: 5 Lakhs+ (0.5M)</option>
                     <option value="1000000">Views: 10 Lakhs+ (1M+)</option>
@@ -1479,7 +1480,8 @@ export default function HomePage() {
                     }}
                     title="Minimum creator followers / subscribers"
                   >
-                    <option value="14000">Followers: &gt; 14k+ (Target)</option>
+                    <option value="1000">Followers: &gt; 1k+ (Default)</option>
+                    <option value="14000">Followers: &gt; 14k+</option>
                     <option value="50000">Followers: &gt; 50k+</option>
                     <option value="100000">Followers: &gt; 100k+ (1 Lakh+)</option>
                     <option value="0">Followers: Any Size</option>
@@ -1503,14 +1505,14 @@ export default function HomePage() {
                     }}
                     title="Filter by Views-to-Followers / Subscribers Reach Ratio"
                   >
-                    <option value="2.5">Reach: 🚀 Min 2.5x+ Followers (Default)</option>
+                    <option value="3">Reach: 🚀 Min 3x+ Followers (Default)</option>
                     <option value="5">Reach: 🔥 Min 5x+ Followers</option>
                     <option value="10">Reach: ⚡ Min 10x+ Followers</option>
                     <option value="1">Reach: Min 1.0x+ Followers</option>
                     <option value="0">Reach: All (Include Below Followers)</option>
                   </select>
 
-                  {(minFollowerRatio > 0 || minViews !== 100000 || minFollowers !== 14000 || minMultiplier > 0 || selectedPlatform !== 'all') && (
+                  {(minFollowerRatio > 0 || minViews !== 20000 || minFollowers !== 1000 || minMultiplier > 0 || selectedPlatform !== 'all') && (
                     <button
                       type="button"
                       onClick={() => {

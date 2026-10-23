@@ -30,7 +30,7 @@ export interface InstagramSearchOptions {
   minViews?: number;
   minFollowers?: number;
   maxAgeHours?: number; // default 48 hours
-  minFollowerRatio?: number; // default 2.5x reach
+  minFollowerRatio?: number; // default 3x reach
 }
 
 /**
@@ -119,13 +119,13 @@ export function extractCoreSearchTerm(keyword: string): string {
 
 /**
  * Searches Instagram popular reels using Apify instagram-search-scraper
- * Filters strictly by minViews (Lakhs/Millions) and minFollowers (>14k).
+ * Filters strictly by minViews and minFollowers.
  */
 export async function searchInstagramOutliers(options: InstagramSearchOptions): Promise<OutlierCandidate[]> {
   const token = getApifyToken();
   const limit = options.searchLimit || 20;
-  const minViews = typeof options.minViews === 'number' ? options.minViews : 100_000;
-  const minFollowers = typeof options.minFollowers === 'number' ? options.minFollowers : 14_000;
+  const minViews = typeof options.minViews === 'number' ? options.minViews : 20_000;
+  const minFollowers = typeof options.minFollowers === 'number' ? options.minFollowers : 1_000;
 
   const cleanKeyword = sanitizeForInstagramSearch(options.keyword);
   if (!cleanKeyword) {
@@ -220,7 +220,7 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
       const reelUrl = item.url || (code ? `https://www.instagram.com/reel/${code}/` : '');
       const username = (item.ownerUsername || '').toLowerCase();
 
-      // 3. Creator audience filter: must have followers >= minFollowers (e.g. >14k)
+      // 3. Creator audience filter: must have followers >= minFollowers
       const profile = profilesMap.get(username);
       const followerCount = profile?.followersCount ?? 0;
 
@@ -249,10 +249,10 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
         ? Math.round((playCount / followerCount) * 10) / 10
         : 0;
 
-      // 5. Follower reach filter: default min 2.5x reach required
-      const minFollowerRatio = typeof options.minFollowerRatio === 'number' ? options.minFollowerRatio : 2.5;
+      // 5. Follower reach filter: default min 3x reach required
+      const minFollowerRatio = typeof options.minFollowerRatio === 'number' ? options.minFollowerRatio : 3;
       if (minFollowerRatio > 0 && followerCount > 0 && viewToFollowerRatio < minFollowerRatio) {
-        continue; // Skip! Views must be >= 2.5x follower count to be a true outlier
+        continue; // Skip! Views must be >= minFollowerRatio x follower count to be a true outlier
       }
 
       const score = calculateOutlierScore({
