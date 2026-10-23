@@ -41,14 +41,12 @@ function getApiKey(): string {
 async function searchYouTubeOutliersForDays(
   options: YouTubeSearchOptions,
   days: number,
-  windowTag: '48h' | '4d' | '6d'
+  windowTag: '48h' | '4d' | '6d' | 'evergreen'
 ): Promise<OutlierCandidate[]> {
   const apiKey = getApiKey();
   const maxResults = options.maxResults || 15;
   const minViews = typeof options.minViews === 'number' ? options.minViews : 20_000;
   const minSubscribers = typeof options.minSubscribers === 'number' ? options.minSubscribers : 1_000;
-
-  const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   // 1. Search videos: if searching for high view outliers, prioritize viewCount order
   const searchOrder = minViews >= 20_000 ? 'viewCount' : 'relevance';
@@ -57,7 +55,10 @@ async function searchYouTubeOutliersForDays(
   searchUrl.searchParams.set('q', options.keyword);
   searchUrl.searchParams.set('type', 'video');
   searchUrl.searchParams.set('order', searchOrder);
-  searchUrl.searchParams.set('publishedAfter', publishedAfter); // Always enforce 48 hours
+  if (days > 0) {
+    const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    searchUrl.searchParams.set('publishedAfter', publishedAfter);
+  }
   searchUrl.searchParams.set('maxResults', String(maxResults));
   if (options.videoDuration) {
     searchUrl.searchParams.set('videoDuration', options.videoDuration);
@@ -223,9 +224,21 @@ export async function searchYouTubeOutliers(options: YouTubeSearchOptions): Prom
 
   // Step 3: If 4 days produces 0 matches, fall back to 6 days back (144 hours)
   try {
-    return await searchYouTubeOutliersForDays(options, 6, '6d');
+    const candidates6d = await searchYouTubeOutliersForDays(options, 6, '6d');
+    if (candidates6d.length > 0) {
+      return candidates6d;
+    }
   } catch (err: any) {
     console.warn(`[YouTube] 6-day fallback warning: ${err.message}`);
+  }
+
+  // Step 4: Last resort - no fresh upload matched. Surface the best all-time matches
+  // (no publishedAfter restriction) instead of nothing, tagged 'evergreen' so the team
+  // knows it's not a live trend.
+  try {
+    return await searchYouTubeOutliersForDays(options, 0, 'evergreen');
+  } catch (err: any) {
+    console.warn(`[YouTube] evergreen fallback warning: ${err.message}`);
     return [];
   }
 }

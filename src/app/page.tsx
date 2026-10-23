@@ -1605,11 +1605,17 @@ export default function HomePage() {
                           borderRadius: '4px',
                           fontSize: '0.68rem',
                           fontWeight: 700,
-                          background: c.timeWindow === '48h' ? 'rgba(16, 185, 129, 0.9)' : 'rgba(234, 179, 8, 0.9)',
+                          background: c.timeWindow === '48h'
+                            ? 'rgba(16, 185, 129, 0.9)'
+                            : c.timeWindow === 'evergreen'
+                            ? 'rgba(148, 163, 184, 0.9)'
+                            : 'rgba(234, 179, 8, 0.9)',
                           color: '#000',
                           letterSpacing: '0.04em'
-                        }}>
-                          {c.timeWindow === '48h' ? '⚡ 48h' : c.timeWindow === '4d' ? '⏳ 4d' : '⏳ 6d'}
+                        }}
+                        title={c.timeWindow === 'evergreen' ? 'No fresh match in 6 days — best all-time match for this keyword' : undefined}
+                        >
+                          {c.timeWindow === '48h' ? '⚡ 48h' : c.timeWindow === '4d' ? '⏳ 4d' : c.timeWindow === '6d' ? '⏳ 6d' : '📦 Evergreen'}
                         </span>
                       )}
                       {c.durationSeconds ? (

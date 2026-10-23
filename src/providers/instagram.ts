@@ -56,35 +56,50 @@ export async function getInstagramCreatorProfilesBatch(
 
   if (toFetch.length === 0) return result;
 
-  try {
-    const runUrl = `${APIFY_BASE}/acts/${PROFILE_ACTOR}/run-sync-get-dataset-items?token=${token}&timeout=25`;
-    const response = await fetch(runUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ usernames: toFetch.slice(0, 20) }),
-      signal: AbortSignal.timeout(26000)
-    });
-
-    if (response.ok) {
-      const items: any[] = await response.json();
-      if (Array.isArray(items)) {
-        for (const item of items) {
-          const u = (item.username || '').toLowerCase();
-          if (!u) continue;
-          const entry: InstagramProfileCacheEntry = {
-            followersCount: item.followersCount || 0,
-            fullName: item.fullName,
-            avatarUrl: item.profilePicUrlHD || item.profilePicUrl,
-            timestamp: Date.now()
-          };
-          instagramProfileCache.set(u, entry);
-          result.set(u, entry);
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Instagram profile batch fetch warning:', err);
+  // Per-profile scrape time varies a lot by account size (measured ~9s for one lightweight
+  // profile, ~46s for 8 heavier ones) - there's no batch size that's reliably fast. Splitting
+  // into small chunks run in parallel at least keeps wall-clock time down (chunks run
+  // concurrently, not summed) and limits how much of the budget any single slow account eats.
+  const CHUNK_SIZE = 5;
+  const chunks: string[][] = [];
+  for (let i = 0; i < toFetch.length; i += CHUNK_SIZE) {
+    chunks.push(toFetch.slice(i, i + CHUNK_SIZE));
   }
+
+  const runUrl = `${APIFY_BASE}/acts/${PROFILE_ACTOR}/run-sync-get-dataset-items?token=${token}&timeout=35`;
+
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        const response = await fetch(runUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usernames: chunk }),
+          signal: AbortSignal.timeout(36000)
+        });
+
+        if (response.ok) {
+          const items: any[] = await response.json();
+          if (Array.isArray(items)) {
+            for (const item of items) {
+              const u = (item.username || '').toLowerCase();
+              if (!u) continue;
+              const entry: InstagramProfileCacheEntry = {
+                followersCount: item.followersCount || 0,
+                fullName: item.fullName,
+                avatarUrl: item.profilePicUrlHD || item.profilePicUrl,
+                timestamp: Date.now()
+              };
+              instagramProfileCache.set(u, entry);
+              result.set(u, entry);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Instagram profile batch fetch warning:', err);
+      }
+    })
+  );
 
   return result;
 }
@@ -200,16 +215,25 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
     return [];
   }
 
-  // 2. Collect unique creator usernames to fetch follower counts in one batch
+  // 2. Collect unique creator usernames to fetch follower counts for.
+  // Capped to the top 10 by view count: the Apify Profile Scraper bills per profile
+  // and can take anywhere from ~10s to ~45s per profile depending on account size, so
+  // resolving every matched owner (up to 20) burns Apify events on creators whose videos
+  // were never going to be the best candidates anyway.
+  const sortedByViews = [...highViewItems].sort((a, b) => {
+    const aViews = a.videoPlayCount || a.videoViewCount || a.viewsCount || 0;
+    const bViews = b.videoPlayCount || b.videoViewCount || b.viewsCount || 0;
+    return bViews - aViews;
+  });
   const usernamesToFetch = Array.from(
-    new Set(highViewItems.map((it) => it.ownerUsername).filter(Boolean))
-  ) as string[];
+    new Set(sortedByViews.map((it) => it.ownerUsername).filter(Boolean))
+  ).slice(0, 10) as string[];
 
   const profilesMap = minFollowers > 0 && usernamesToFetch.length > 0
     ? await getInstagramCreatorProfilesBatch(usernamesToFetch, token)
     : new Map<string, InstagramProfileCacheEntry>();
 
-  const buildCandidatesForWindow = (maxHours: number, windowTag: '48h' | '4d' | '6d'): OutlierCandidate[] => {
+  const buildCandidatesForWindow = (maxHours: number, windowTag: '48h' | '4d' | '6d' | 'evergreen'): OutlierCandidate[] => {
     const list: OutlierCandidate[] = [];
     for (const item of highViewItems) {
       const playCount = item.videoPlayCount || item.videoViewCount || item.viewsCount || item.likesCount * 12 || 0;
@@ -333,7 +357,16 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
   }
 
   // 3. If that produces 0 matches, fall back to 6 days back (144 hours)
-  return buildCandidatesForWindow(144, '6d');
+  const candidates6d = buildCandidatesForWindow(144, '6d');
+  if (candidates6d.length > 0) {
+    return candidates6d;
+  }
+
+  // 4. Last resort: "popular reels" search isn't date-bound and niche keywords rarely trend
+  // within 6 days. Surface the best all-time matches instead of nothing, tagged 'evergreen' so
+  // the team knows it's not a live trend. maxHours=0 reuses the same fetched items with no age
+  // filter applied, so this costs nothing extra.
+  return buildCandidatesForWindow(0, 'evergreen');
 }
 
 /**
