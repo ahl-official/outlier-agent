@@ -38,7 +38,7 @@ async function fetchMembersFromGoogleSheet(): Promise<TeamMember[] | null> {
     });
 
     if (sheetMembers.length > 0) {
-      saveTeamMembers(sheetMembers);
+      await saveTeamMembers(sheetMembers);
       return sheetMembers;
     }
     return null;
@@ -95,7 +95,7 @@ export async function GET() {
     }
 
     // 2. Fallback to local storage
-    const members = getTeamMembers();
+    const members = await getTeamMembers();
     return NextResponse.json({
       success: true,
       source: 'local_storage',
@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
         }))
         .filter((m: TeamMember) => m.name.length > 0);
 
-      const saved = saveTeamMembers(validMembers);
+      const saved = await saveTeamMembers(validMembers);
       // Sync to Google Sheet tab "Team Members" in background
       await syncMembersToGoogleSheet(saved);
 
@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Action based updates: add, update, delete
     const { action, member, id } = body;
-    let currentMembers = getTeamMembers();
+    let currentMembers = await getTeamMembers();
 
     if (action === 'add' && member) {
       const newMember: TeamMember = {
@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
         notes: (member.notes || '').trim()
       };
       currentMembers.push(newMember);
-      saveTeamMembers(currentMembers);
+      await saveTeamMembers(currentMembers);
       await syncMembersToGoogleSheet(currentMembers);
 
       return NextResponse.json({
@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
         }
         return m;
       });
-      saveTeamMembers(currentMembers);
+      await saveTeamMembers(currentMembers);
       await syncMembersToGoogleSheet(currentMembers);
 
       return NextResponse.json({
@@ -195,7 +195,7 @@ export async function POST(req: NextRequest) {
         );
       }
       currentMembers = currentMembers.filter(m => m.id !== id);
-      saveTeamMembers(currentMembers);
+      await saveTeamMembers(currentMembers);
       await syncMembersToGoogleSheet(currentMembers);
 
       return NextResponse.json({

@@ -78,7 +78,7 @@ export async function GET() {
         existingRecords: [],
         sheetUrl: SHEET_URL,
         folderUrl: FOLDER_URL,
-        teamMembers: getTeamMembers(),
+        teamMembers: await getTeamMembers(),
         warning: 'Google Sheets credentials not found. Tracker is running in local-only fallback mode.'
       });
     }
@@ -176,7 +176,7 @@ export async function GET() {
       todayCount,
       todayIST,
       memberCounts,
-      teamMembers: getTeamMembers(),
+      teamMembers: await getTeamMembers(),
       existingCount: existingRecords.length,
       existingUrls: existingRecords.map(r => r.normalizedUrl),
       existingRecords
@@ -327,7 +327,7 @@ export async function POST(req: NextRequest) {
     });
 
     const updatedMemberCount = memberTodayCount + 1;
-    const activeTeam = getTeamMembers();
+    const activeTeam = await getTeamMembers();
     const matchedMember = activeTeam.find(m => m.name.toLowerCase() === submittedBy.trim().toLowerCase());
     const memberDailyTarget = matchedMember?.dailyTarget || 10;
     const remainingQuota = Math.max(0, memberDailyTarget - updatedMemberCount);

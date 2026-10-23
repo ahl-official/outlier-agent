@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     // 1. Check Master Video Registry for existing breakdown (0 tokens, 0 scraper calls!)
     const targetKey = url || candidateId;
     if (targetKey && !forceRefresh && !aiApiKey) {
-      const cachedEntry = getCachedVideo(targetKey, 72); // 72-hour TTL
+      const cachedEntry = await getCachedVideo(targetKey, 72); // 72-hour TTL
       if (
         cachedEntry &&
         cachedEntry.breakdown &&
@@ -37,12 +37,12 @@ export async function POST(req: NextRequest) {
 
     // 2. Check radar cache or master registry
     if (candidateId) {
-      const cached = getSavedRadarCache();
+      const cached = await getSavedRadarCache();
       const found = cached.find((c) => c.id === candidateId || c.url === candidateId);
       if (found) {
         candidate = found;
       } else {
-        const regEntry = getCachedVideo(candidateId);
+        const regEntry = await getCachedVideo(candidateId);
         if (regEntry) candidate = regEntry.candidate;
       }
     }
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     const analysis: DetailedOutlierBreakdown = await analyzeOutlierVideo(candidate, { aiApiKey: effectiveApiKey });
 
     // 5. Store in master registry so it never needs to be re-scraped
-    saveVideoToRegistry(candidate, analysis);
+    await saveVideoToRegistry(candidate, analysis);
 
     return NextResponse.json({
       success: true,

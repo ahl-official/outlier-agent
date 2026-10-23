@@ -1,112 +1,63 @@
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import { getSupabase } from './lib/supabase';
 import { BoardItem, BoardStatus, OutlierCandidate, DetailedOutlierBreakdown } from './types';
 
-// Detect Serverless / read-only production environments
-const isServerless = !!(
-  process.env.VERCEL || 
-  process.env.AWS_LAMBDA_FUNCTION_NAME || 
-  process.env.NETLIFY ||
-  process.env.LAMBDA_TASK_ROOT ||
-  process.env.NODE_ENV === 'production'
-);
-
-// Seed data directory (read-only bundled files in process.cwd())
-const BUNDLED_DATA_DIR = path.join(process.cwd(), 'data');
-
-// Writable data directory: use /tmp on serverless environments to avoid EROFS error
-const WRITABLE_DATA_DIR = isServerless 
-  ? path.join(os.tmpdir(), 'outlier_agent_data')
-  : path.join(process.cwd(), 'data');
-
-function getFilePath(filename: string): { readPath: string; writePath: string } {
-  const writePath = path.join(WRITABLE_DATA_DIR, filename);
-  const bundledPath = path.join(BUNDLED_DATA_DIR, filename);
-
-  // If writable copy exists (e.g. in /tmp), read that; otherwise read bundled seed
-  const readPath = fs.existsSync(writePath) ? writePath : bundledPath;
-  return { readPath, writePath };
-}
-
-function safeEnsureDir(dir: string): boolean {
-  try {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    return true;
-  } catch (err: any) {
-    console.warn(`[Storage] Cannot create directory ${dir}: ${err.message}`);
-    return false;
-  }
-}
-
-// In-Memory fallback store so the app NEVER crashes even on strict read-only environments
+// In-memory fallback so the app never hard-crashes if Supabase is briefly unreachable.
+// This is NOT the source of truth (Supabase is) - it only serves stale-but-usable data
+// on a transient failure, and is NOT shared across serverless instances/cold starts.
 const inMemoryStore = {
   board: null as BoardItem[] | null,
   radarCache: null as OutlierCandidate[] | null,
-  videoRegistry: {} as Record<string, any>,
-  searchCache: {} as Record<string, any>,
-  keywords: null as string[] | null
+  searchCache: {} as Record<string, SearchCacheRecord>,
+  brandConfig: null as BrandConfig | null,
+  teamMembers: null as TeamMember[] | null
 };
 
-function safeWriteJson(filename: string, data: any): void {
-  const { writePath } = getFilePath(filename);
-  try {
-    safeEnsureDir(path.dirname(writePath));
-    fs.writeFileSync(writePath, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err: any) {
-    console.warn(`[Storage] Write failed for ${filename} (${err.code || err.message}). Attempting /tmp fallback.`);
-    try {
-      const tmpPath = path.join(os.tmpdir(), 'outlier_agent_data', filename);
-      safeEnsureDir(path.dirname(tmpPath));
-      fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
-    } catch (tmpErr: any) {
-      console.warn(`[Storage] Fallback write to /tmp also failed (${tmpErr.code || tmpErr.message}). Using in-memory store.`);
-    }
-  }
-}
-
-function safeReadJson<T>(filename: string, fallback: T): T {
-  const { readPath } = getFilePath(filename);
-  const tmpPath = path.join(os.tmpdir(), 'outlier_agent_data', filename);
-  const candidatePaths = [readPath, tmpPath, path.join(BUNDLED_DATA_DIR, filename)];
-
-  for (const p of candidatePaths) {
-    try {
-      if (fs.existsSync(p)) {
-        const raw = fs.readFileSync(p, 'utf-8');
-        return JSON.parse(raw);
-      }
-    } catch {
-      // Continue to next path
-    }
-  }
-  return fallback;
+function normalizeVideoKey(urlOrId: string): string {
+  return urlOrId.trim().toLowerCase().replace(/\/$/, '');
 }
 
 // ---------------------------------------------------------------------
 // 1. BOARD / SAVED OUTLIERS PERSISTENCE
 // ---------------------------------------------------------------------
-export function getBoardItems(forceRefresh: boolean = false): BoardItem[] {
-  if (!forceRefresh && inMemoryStore.board && inMemoryStore.board.length > 0) {
-    return inMemoryStore.board;
+export async function getBoardItems(_forceRefresh: boolean = false): Promise<BoardItem[]> {
+  const supabase = getSupabase();
+  if (!supabase) return inMemoryStore.board || [];
+
+  try {
+    const { data, error } = await supabase
+      .from('board_items')
+      .select('*')
+      .order('added_at', { ascending: false });
+    if (error) throw error;
+
+    const items: BoardItem[] = (data || []).map(rowToBoardItem);
+    inMemoryStore.board = items;
+    return items;
+  } catch (err: any) {
+    console.warn(`[Storage] getBoardItems failed (${err.message}), using in-memory fallback`);
+    return inMemoryStore.board || [];
   }
-  const fromDisk = safeReadJson<BoardItem[] | null>('board.json', null);
-  if (Array.isArray(fromDisk)) {
-    inMemoryStore.board = fromDisk;
-    return fromDisk;
-  }
-  return inMemoryStore.board || [];
 }
 
-export function saveBoardItems(items: BoardItem[]): void {
+export async function saveBoardItems(items: BoardItem[]): Promise<void> {
   inMemoryStore.board = items;
-  safeWriteJson('board.json', items);
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  try {
+    const { error: delErr } = await supabase.from('board_items').delete().neq('id', '__never__');
+    if (delErr) throw delErr;
+    if (items.length > 0) {
+      const { error: insErr } = await supabase.from('board_items').insert(items.map(boardItemToRow));
+      if (insErr) throw insErr;
+    }
+  } catch (err: any) {
+    console.warn(`[Storage] saveBoardItems failed: ${err.message}`);
+  }
 }
 
-export function addCandidateToBoard(candidate: OutlierCandidate, breakdown?: DetailedOutlierBreakdown): BoardItem {
-  const items = getBoardItems();
+export async function addCandidateToBoard(candidate: OutlierCandidate, breakdown?: DetailedOutlierBreakdown): Promise<BoardItem> {
+  const items = await getBoardItems();
   const existingIdx = items.findIndex((it) => it.candidate.url === candidate.url || it.candidate.id === candidate.id);
 
   if (existingIdx !== -1) {
@@ -114,7 +65,8 @@ export function addCandidateToBoard(candidate: OutlierCandidate, breakdown?: Det
       items[existingIdx].breakdown = breakdown;
     }
     items[existingIdx].updatedAt = new Date().toISOString();
-    saveBoardItems(items);
+    await upsertBoardItem(items[existingIdx]);
+    inMemoryStore.board = items;
     return items[existingIdx];
   }
 
@@ -128,12 +80,13 @@ export function addCandidateToBoard(candidate: OutlierCandidate, breakdown?: Det
   };
 
   items.unshift(newItem);
-  saveBoardItems(items);
+  await upsertBoardItem(newItem);
+  inMemoryStore.board = items;
   return newItem;
 }
 
-export function updateBoardItemStatus(id: string, status: BoardStatus, extra?: Partial<BoardItem>): BoardItem | null {
-  const items = getBoardItems();
+export async function updateBoardItemStatus(id: string, status: BoardStatus, extra?: Partial<BoardItem>): Promise<BoardItem | null> {
+  const items = await getBoardItems();
   const idx = items.findIndex((it) => it.id === id);
   if (idx === -1) return null;
 
@@ -144,23 +97,141 @@ export function updateBoardItemStatus(id: string, status: BoardStatus, extra?: P
     updatedAt: new Date().toISOString()
   };
 
-  saveBoardItems(items);
+  await upsertBoardItem(items[idx]);
+  inMemoryStore.board = items;
   return items[idx];
+}
+
+async function upsertBoardItem(item: BoardItem): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.from('board_items').upsert(boardItemToRow(item));
+    if (error) throw error;
+  } catch (err: any) {
+    console.warn(`[Storage] upsertBoardItem failed: ${err.message}`);
+  }
+}
+
+function boardItemToRow(item: BoardItem) {
+  return {
+    id: item.id,
+    candidate_id: item.candidate.id,
+    candidate_url: item.candidate.url,
+    candidate: item.candidate,
+    breakdown: item.breakdown ?? null,
+    status: item.status,
+    assigned_to: item.assignedTo ?? null,
+    notes: item.notes ?? null,
+    tags: item.tags ?? null,
+    scheduled_shoot_date: item.scheduledShootDate ?? null,
+    posted_url: item.postedUrl ?? null,
+    added_at: item.addedAt,
+    updated_at: item.updatedAt
+  };
+}
+
+function rowToBoardItem(row: any): BoardItem {
+  return {
+    id: row.id,
+    candidate: row.candidate,
+    breakdown: row.breakdown ?? undefined,
+    status: row.status,
+    assignedTo: row.assigned_to ?? undefined,
+    notes: row.notes ?? undefined,
+    tags: row.tags ?? undefined,
+    scheduledShootDate: row.scheduled_shoot_date ?? undefined,
+    postedUrl: row.posted_url ?? undefined,
+    addedAt: row.added_at,
+    updatedAt: row.updated_at
+  };
 }
 
 // ---------------------------------------------------------------------
 // 2. RADAR SCAN CACHE
 // ---------------------------------------------------------------------
-export function getSavedRadarCache(): OutlierCandidate[] {
-  if (inMemoryStore.radarCache) return inMemoryStore.radarCache;
-  const cached = safeReadJson<OutlierCandidate[]>('radar_cache.json', []);
-  inMemoryStore.radarCache = cached;
-  return cached;
+export async function getSavedRadarCache(): Promise<OutlierCandidate[]> {
+  const supabase = getSupabase();
+  if (!supabase) return inMemoryStore.radarCache || [];
+
+  try {
+    const { data, error } = await supabase
+      .from('radar_cache')
+      .select('candidate')
+      .order('outlier_score', { ascending: false });
+    if (error) throw error;
+
+    const items = (data || []).map((r: any) => r.candidate as OutlierCandidate);
+    inMemoryStore.radarCache = items;
+    return items;
+  } catch (err: any) {
+    console.warn(`[Storage] getSavedRadarCache failed (${err.message}), using in-memory fallback`);
+    return inMemoryStore.radarCache || [];
+  }
 }
 
-export function saveRadarCache(candidates: OutlierCandidate[]): void {
+export async function saveRadarCache(candidates: OutlierCandidate[]): Promise<void> {
   inMemoryStore.radarCache = candidates;
-  safeWriteJson('radar_cache.json', candidates);
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  try {
+    const { error: delErr } = await supabase.from('radar_cache').delete().neq('id', '__never__');
+    if (delErr) throw delErr;
+    if (candidates.length > 0) {
+      const deduped = Array.from(new Map(candidates.map((c) => [c.id, c])).values());
+      const rows = deduped.map((c) => ({
+        id: c.id,
+        candidate: c,
+        outlier_score: c.outlierScore,
+        platform: c.platform,
+        matched_keyword: c.matchedKeyword,
+        updated_at: new Date().toISOString()
+      }));
+      const { error: insErr } = await supabase.from('radar_cache').insert(rows);
+      if (insErr) throw insErr;
+    }
+  } catch (err: any) {
+    console.warn(`[Storage] saveRadarCache failed: ${err.message}`);
+  }
+}
+
+/**
+ * Merges candidates into the existing radar cache instead of replacing it wholesale.
+ * Used by the scheduled background scan, which only covers a couple of keywords per run
+ * (to stay inside the serverless time budget) and must not wipe out everything else that's
+ * already cached from earlier runs.
+ */
+export async function upsertRadarCache(candidates: OutlierCandidate[]): Promise<void> {
+  if (candidates.length === 0) return;
+
+  // Dedupe by id first - Postgres' ON CONFLICT DO UPDATE errors if the same row is
+  // targeted twice within one upsert call, which happens whenever two scanned keywords
+  // matched the same video.
+  const dedupedCandidates = Array.from(new Map(candidates.map((c) => [c.id, c])).values());
+
+  const existing = inMemoryStore.radarCache || [];
+  const merged = new Map(existing.map((c) => [c.id, c]));
+  dedupedCandidates.forEach((c) => merged.set(c.id, c));
+  inMemoryStore.radarCache = Array.from(merged.values());
+
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  try {
+    const rows = dedupedCandidates.map((c) => ({
+      id: c.id,
+      candidate: c,
+      outlier_score: c.outlierScore,
+      platform: c.platform,
+      matched_keyword: c.matchedKeyword,
+      updated_at: new Date().toISOString()
+    }));
+    const { error } = await supabase.from('radar_cache').upsert(rows);
+    if (error) throw error;
+  } catch (err: any) {
+    console.warn(`[Storage] upsertRadarCache failed: ${err.message}`);
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -172,40 +243,55 @@ export interface RegistryEntry {
   cachedAt: string;
 }
 
-export function getVideoRegistry(): Record<string, RegistryEntry> {
-  if (Object.keys(inMemoryStore.videoRegistry).length > 0) {
-    return inMemoryStore.videoRegistry;
-  }
-  const registry = safeReadJson<Record<string, RegistryEntry>>('video_registry.json', {});
-  inMemoryStore.videoRegistry = registry;
-  return registry;
-}
+export async function getCachedVideo(urlOrId: string, maxAgeHours: number = 72): Promise<RegistryEntry | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
 
-export function getCachedVideo(urlOrId: string, maxAgeHours: number = 72): RegistryEntry | null {
-  const registry = getVideoRegistry();
   const key = normalizeVideoKey(urlOrId);
-  const entry = registry[key];
-  if (!entry) return null;
+  try {
+    const { data, error } = await supabase
+      .from('video_registry')
+      .select('candidate, breakdown, cached_at')
+      .eq('id', key)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
 
-  const ageMs = Date.now() - new Date(entry.cachedAt).getTime();
-  if (ageMs > maxAgeHours * 60 * 60 * 1000) {
+    const ageMs = Date.now() - new Date(data.cached_at).getTime();
+    if (ageMs > maxAgeHours * 60 * 60 * 1000) return null;
+
+    return { candidate: data.candidate, breakdown: data.breakdown ?? undefined, cachedAt: data.cached_at };
+  } catch (err: any) {
+    console.warn(`[Storage] getCachedVideo failed: ${err.message}`);
     return null;
   }
-  return entry;
 }
 
-export function saveVideoToRegistry(candidate: OutlierCandidate, breakdown?: DetailedOutlierBreakdown): void {
-  const registry = getVideoRegistry();
-  const key = normalizeVideoKey(candidate.url || candidate.id);
+export async function saveVideoToRegistry(candidate: OutlierCandidate, breakdown?: DetailedOutlierBreakdown): Promise<void> {
+  await saveVideosToRegistry([{ candidate, breakdown }]);
+}
 
-  registry[key] = {
-    candidate,
-    breakdown,
-    cachedAt: new Date().toISOString()
-  };
+/**
+ * Bulk variant - a radar scan can produce 10-20 candidates at once, so this upserts them
+ * in a single round trip instead of one request per candidate.
+ */
+export async function saveVideosToRegistry(entries: { candidate: OutlierCandidate; breakdown?: DetailedOutlierBreakdown }[]): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase || entries.length === 0) return;
 
-  inMemoryStore.videoRegistry = registry;
-  safeWriteJson('video_registry.json', registry);
+  try {
+    const cachedAt = new Date().toISOString();
+    const rows = entries.map(({ candidate, breakdown }) => ({
+      id: normalizeVideoKey(candidate.url || candidate.id),
+      candidate,
+      breakdown: breakdown ?? null,
+      cached_at: cachedAt
+    }));
+    const { error } = await supabase.from('video_registry').upsert(rows);
+    if (error) throw error;
+  } catch (err: any) {
+    console.warn(`[Storage] saveVideosToRegistry failed: ${err.message}`);
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -218,56 +304,66 @@ export interface SearchCacheRecord {
   searchedAt: string;
 }
 
-export function getKeywordSearchCache(keyword: string, platform: string, maxAgeHours: number = 24): OutlierCandidate[] | null {
-  const store = getSearchCacheStore();
+export async function getKeywordSearchCache(keyword: string, platform: string, maxAgeHours: number = 24): Promise<OutlierCandidate[] | null> {
   const key = `${keyword.toLowerCase().trim()}_${platform}`;
-  const record = store[key];
-  if (!record) return null;
-
-  const ageMs = Date.now() - new Date(record.searchedAt).getTime();
-  if (ageMs > maxAgeHours * 60 * 60 * 1000) return null;
-
-  return record.candidates;
-}
-
-function getSearchCacheStore(): Record<string, SearchCacheRecord> {
-  if (Object.keys(inMemoryStore.searchCache).length > 0) {
-    return inMemoryStore.searchCache;
+  const supabase = getSupabase();
+  if (!supabase) {
+    const cached = inMemoryStore.searchCache[key];
+    return cached ? cached.candidates : null;
   }
-  const store = safeReadJson<Record<string, SearchCacheRecord>>('search_cache.json', {});
-  inMemoryStore.searchCache = store;
-  return store;
+
+  try {
+    const { data, error } = await supabase
+      .from('search_cache')
+      .select('candidates, searched_at')
+      .eq('id', key)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+
+    const ageMs = Date.now() - new Date(data.searched_at).getTime();
+    if (ageMs > maxAgeHours * 60 * 60 * 1000) return null;
+
+    return data.candidates;
+  } catch (err: any) {
+    console.warn(`[Storage] getKeywordSearchCache failed: ${err.message}`);
+    return null;
+  }
 }
 
-export function saveKeywordSearchCache(keyword: string, platform: string, candidates: OutlierCandidate[]): void {
-  const store = getSearchCacheStore();
+export async function saveKeywordSearchCache(keyword: string, platform: string, candidates: OutlierCandidate[]): Promise<void> {
   const key = `${keyword.toLowerCase().trim()}_${platform}`;
-  store[key] = {
-    keyword,
-    platform,
-    candidates,
-    searchedAt: new Date().toISOString()
-  };
+  const searchedAt = new Date().toISOString();
+  inMemoryStore.searchCache[key] = { keyword, platform, candidates, searchedAt };
 
-  inMemoryStore.searchCache = store;
-  safeWriteJson('search_cache.json', store);
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  try {
+    const { error } = await supabase.from('search_cache').upsert({
+      id: key,
+      keyword,
+      platform,
+      candidates,
+      searched_at: searchedAt
+    });
+    if (error) throw error;
+  } catch (err: any) {
+    console.warn(`[Storage] saveKeywordSearchCache failed: ${err.message}`);
+  }
 }
-
-function normalizeVideoKey(urlOrId: string): string {
-  return urlOrId.trim().toLowerCase().replace(/\/$/, '');
-}
-
-import { 
-  AHL_SPECIFIC_KEYWORDS, 
-  ALCHEMANE_SPECIFIC_KEYWORDS, 
-  AHL_CATEGORY_GROUPS, 
-  ALCHEMANE_CATEGORY_GROUPS,
-  KeywordGroup 
-} from './keywords';
 
 // ---------------------------------------------------------------------
 // 5. BRAND PRESETS & USER TARGET KEYWORDS MANAGEMENT
 // ---------------------------------------------------------------------
+import {
+  AHL_SPECIFIC_KEYWORDS,
+  ALCHEMANE_SPECIFIC_KEYWORDS,
+  AHL_CATEGORY_GROUPS,
+  ALCHEMANE_CATEGORY_GROUPS,
+  KeywordGroup
+} from './keywords';
+
 export const AHL_DEFAULT_KEYWORDS = AHL_SPECIFIC_KEYWORDS;
 export const ALCHEMANE_DEFAULT_KEYWORDS = ALCHEMANE_SPECIFIC_KEYWORDS;
 
@@ -277,53 +373,78 @@ export interface BrandConfig {
   alchemaneKeywords: string[];
 }
 
-export function getBrandConfig(): BrandConfig {
+export async function getBrandConfig(): Promise<BrandConfig> {
   const fallback: BrandConfig = {
     activeBrand: 'AHL',
     ahlKeywords: AHL_DEFAULT_KEYWORDS,
     alchemaneKeywords: ALCHEMANE_DEFAULT_KEYWORDS
   };
 
-  const stored = safeReadJson<BrandConfig>('brand_config.json', fallback);
-  return {
-    activeBrand: stored.activeBrand || 'AHL',
-    ahlKeywords: Array.isArray(stored.ahlKeywords) && stored.ahlKeywords.length > 0 ? stored.ahlKeywords : AHL_DEFAULT_KEYWORDS,
-    alchemaneKeywords: Array.isArray(stored.alchemaneKeywords) && stored.alchemaneKeywords.length > 0 ? stored.alchemaneKeywords : ALCHEMANE_DEFAULT_KEYWORDS
-  };
+  const supabase = getSupabase();
+  if (!supabase) return inMemoryStore.brandConfig || fallback;
+
+  try {
+    const { data, error } = await supabase.from('brand_config').select('*').eq('id', 'singleton').maybeSingle();
+    if (error) throw error;
+
+    const config: BrandConfig = {
+      activeBrand: data?.active_brand === 'Alchemane' ? 'Alchemane' : 'AHL',
+      ahlKeywords: Array.isArray(data?.ahl_keywords) && data.ahl_keywords.length > 0 ? data.ahl_keywords : AHL_DEFAULT_KEYWORDS,
+      alchemaneKeywords: Array.isArray(data?.alchemane_keywords) && data.alchemane_keywords.length > 0 ? data.alchemane_keywords : ALCHEMANE_DEFAULT_KEYWORDS
+    };
+    inMemoryStore.brandConfig = config;
+    return config;
+  } catch (err: any) {
+    console.warn(`[Storage] getBrandConfig failed: ${err.message}`);
+    return inMemoryStore.brandConfig || fallback;
+  }
 }
 
-export function saveBrandConfig(config: BrandConfig): void {
-  safeWriteJson('brand_config.json', config);
+export async function saveBrandConfig(config: BrandConfig): Promise<void> {
+  inMemoryStore.brandConfig = config;
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  try {
+    const { error } = await supabase.from('brand_config').upsert({
+      id: 'singleton',
+      active_brand: config.activeBrand,
+      ahl_keywords: config.ahlKeywords,
+      alchemane_keywords: config.alchemaneKeywords
+    });
+    if (error) throw error;
+  } catch (err: any) {
+    console.warn(`[Storage] saveBrandConfig failed: ${err.message}`);
+  }
 }
 
-export function getActiveBrand(): 'AHL' | 'Alchemane' {
-  return getBrandConfig().activeBrand;
+export async function getActiveBrand(): Promise<'AHL' | 'Alchemane'> {
+  return (await getBrandConfig()).activeBrand;
 }
 
-export function getActiveKeywords(): string[] {
-  const config = getBrandConfig();
+export async function getActiveKeywords(): Promise<string[]> {
+  const config = await getBrandConfig();
   return config.activeBrand === 'Alchemane' ? config.alchemaneKeywords : config.ahlKeywords;
 }
 
-export function getActiveCategoryGroups(): KeywordGroup[] {
-  const brand = getActiveBrand();
+export async function getActiveCategoryGroups(): Promise<KeywordGroup[]> {
+  const brand = await getActiveBrand();
   return brand === 'Alchemane' ? ALCHEMANE_CATEGORY_GROUPS : AHL_CATEGORY_GROUPS;
 }
 
-export function switchActiveBrand(brand: 'AHL' | 'Alchemane'): { activeBrand: 'AHL' | 'Alchemane'; keywords: string[]; categoryGroups: KeywordGroup[] } {
-  const config = getBrandConfig();
+export async function switchActiveBrand(brand: 'AHL' | 'Alchemane'): Promise<{ activeBrand: 'AHL' | 'Alchemane'; keywords: string[]; categoryGroups: KeywordGroup[] }> {
+  const config = await getBrandConfig();
   config.activeBrand = brand;
-  saveBrandConfig(config);
+  await saveBrandConfig(config);
   const keywords = brand === 'Alchemane' ? config.alchemaneKeywords : config.ahlKeywords;
   const categoryGroups = brand === 'Alchemane' ? ALCHEMANE_CATEGORY_GROUPS : AHL_CATEGORY_GROUPS;
-  inMemoryStore.keywords = keywords;
   return { activeBrand: brand, keywords, categoryGroups };
 }
 
-export function addCustomKeyword(keyword: string): string[] {
-  const config = getBrandConfig();
+export async function addCustomKeyword(keyword: string): Promise<string[]> {
+  const config = await getBrandConfig();
   const trimmed = keyword.trim();
-  if (!trimmed) return getActiveKeywords();
+  if (!trimmed) return config.activeBrand === 'Alchemane' ? config.alchemaneKeywords : config.ahlKeywords;
 
   const isAlchemane = config.activeBrand === 'Alchemane';
   const targetList = isAlchemane ? config.alchemaneKeywords : config.ahlKeywords;
@@ -335,13 +456,13 @@ export function addCustomKeyword(keyword: string): string[] {
     } else {
       config.ahlKeywords = targetList;
     }
-    saveBrandConfig(config);
+    await saveBrandConfig(config);
   }
   return targetList;
 }
 
-export function removeCustomKeyword(keyword: string): string[] {
-  const config = getBrandConfig();
+export async function removeCustomKeyword(keyword: string): Promise<string[]> {
+  const config = await getBrandConfig();
   const isAlchemane = config.activeBrand === 'Alchemane';
   const targetList = isAlchemane ? config.alchemaneKeywords : config.ahlKeywords;
   const defaultList = isAlchemane ? ALCHEMANE_DEFAULT_KEYWORDS : AHL_DEFAULT_KEYWORDS;
@@ -354,10 +475,13 @@ export function removeCustomKeyword(keyword: string): string[] {
   } else {
     config.ahlKeywords = finalKeywords;
   }
-  saveBrandConfig(config);
+  await saveBrandConfig(config);
   return finalKeywords;
 }
 
+// ---------------------------------------------------------------------
+// 6. TEAM MEMBERS
+// ---------------------------------------------------------------------
 export interface TeamMember {
   id: string;
   name: string;
@@ -394,16 +518,55 @@ export const DEFAULT_TEAM_MEMBERS: TeamMember[] = [
   }
 ];
 
-export function getTeamMembers(): TeamMember[] {
-  const members = safeReadJson<TeamMember[]>('team.json', DEFAULT_TEAM_MEMBERS);
-  if (!Array.isArray(members) || members.length === 0) {
-    return DEFAULT_TEAM_MEMBERS;
+export async function getTeamMembers(): Promise<TeamMember[]> {
+  const supabase = getSupabase();
+  if (!supabase) return inMemoryStore.teamMembers || DEFAULT_TEAM_MEMBERS;
+
+  try {
+    const { data, error } = await supabase.from('team_members').select('*');
+    if (error) throw error;
+
+    if (!Array.isArray(data) || data.length === 0) {
+      return DEFAULT_TEAM_MEMBERS;
+    }
+    const members: TeamMember[] = data.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      role: row.role,
+      dailyTarget: row.daily_target,
+      phone: row.phone ?? undefined,
+      notes: row.notes ?? undefined
+    }));
+    inMemoryStore.teamMembers = members;
+    return members;
+  } catch (err: any) {
+    console.warn(`[Storage] getTeamMembers failed: ${err.message}`);
+    return inMemoryStore.teamMembers || DEFAULT_TEAM_MEMBERS;
+  }
+}
+
+export async function saveTeamMembers(members: TeamMember[]): Promise<TeamMember[]> {
+  inMemoryStore.teamMembers = members;
+  const supabase = getSupabase();
+  if (!supabase) return members;
+
+  try {
+    const { error: delErr } = await supabase.from('team_members').delete().neq('id', '__never__');
+    if (delErr) throw delErr;
+    if (members.length > 0) {
+      const rows = members.map((m) => ({
+        id: m.id,
+        name: m.name,
+        role: m.role,
+        daily_target: m.dailyTarget,
+        phone: m.phone ?? null,
+        notes: m.notes ?? null
+      }));
+      const { error: insErr } = await supabase.from('team_members').insert(rows);
+      if (insErr) throw insErr;
+    }
+  } catch (err: any) {
+    console.warn(`[Storage] saveTeamMembers failed: ${err.message}`);
   }
   return members;
 }
-
-export function saveTeamMembers(members: TeamMember[]): TeamMember[] {
-  safeWriteJson('team.json', members);
-  return members;
-}
-

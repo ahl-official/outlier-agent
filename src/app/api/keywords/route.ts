@@ -9,9 +9,9 @@ import {
 } from '@/storage';
 
 export async function GET() {
-  const brand = getActiveBrand();
-  const keywords = getActiveKeywords();
-  const categoryGroups = getActiveCategoryGroups();
+  const brand = await getActiveBrand();
+  const keywords = await getActiveKeywords();
+  const categoryGroups = await getActiveCategoryGroups();
   return NextResponse.json({ brand, keywords, categoryGroups });
 }
 
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       if (brand !== 'AHL' && brand !== 'Alchemane') {
         return NextResponse.json({ success: false, error: 'Brand must be AHL or Alchemane' }, { status: 400 });
       }
-      const result = switchActiveBrand(brand);
+      const result = await switchActiveBrand(brand);
       return NextResponse.json({ 
         success: true, 
         brand: result.activeBrand, 
@@ -38,12 +38,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'add') {
-      const updated = addCustomKeyword(keyword);
+      const updated = await addCustomKeyword(keyword);
       return NextResponse.json({ success: true, keywords: updated });
     }
 
     if (action === 'remove') {
-      const updated = removeCustomKeyword(keyword);
+      const updated = await removeCustomKeyword(keyword);
       return NextResponse.json({ success: true, keywords: updated });
     }
 

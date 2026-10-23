@@ -78,7 +78,7 @@ async function main() {
   });
 
   const ranked = rankOutlierCandidates(uniqueCandidates);
-  saveRadarCache(ranked);
+  await saveRadarCache(ranked);
 
   console.log(`\nFound ${ranked.length} total unique candidates. Top ranked outliers:\n`);
 
@@ -128,7 +128,7 @@ async function main() {
     console.log(`   Engagement Trigger  : ${breakdown.whyOutlierDiagnosis.engagementTrigger}`);
   }
 
-  console.log(`\n✅ Radar results saved to data/radar_cache.json. Done!\n`);
+  console.log(`\n✅ Radar results saved to Supabase (radar_cache). Done!\n`);
 }
 
 main().catch(console.error);

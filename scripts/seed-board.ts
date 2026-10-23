@@ -3,7 +3,7 @@ import { analyzeOutlierVideo } from '../src/breakdown/analyze';
 import { BoardItem } from '../src/types';
 
 async function seed() {
-  const cached = getSavedRadarCache();
+  const cached = await getSavedRadarCache();
   if (cached.length >= 2) {
     const b1 = await analyzeOutlierVideo(cached[0]);
     const b2 = await analyzeOutlierVideo(cached[1]);
@@ -29,7 +29,7 @@ async function seed() {
       }
     ];
 
-    saveBoardItems(items);
+    await saveBoardItems(items);
     console.log('✅ Board refreshed with clean, accurate items in Saved and Analyzing!');
   }
 }

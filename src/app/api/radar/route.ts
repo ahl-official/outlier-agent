@@ -3,12 +3,12 @@ import { DEFAULT_RADAR_KEYWORDS, NICHE_KEYWORD_GROUPS } from '@/keywords';
 import { searchYouTubeOutliers } from '@/providers/youtube';
 import { searchInstagramOutliers } from '@/providers/instagram';
 import { rankOutlierCandidates } from '@/scoring/outlier';
-import { 
-  getSavedRadarCache, 
-  saveRadarCache, 
-  getKeywordSearchCache, 
-  saveKeywordSearchCache, 
-  saveVideoToRegistry 
+import {
+  getSavedRadarCache,
+  saveRadarCache,
+  getKeywordSearchCache,
+  saveKeywordSearchCache,
+  saveVideosToRegistry
 } from '@/storage';
 import { OutlierCandidate } from '@/types';
 
@@ -16,7 +16,8 @@ export const maxDuration = 60; // 60s timeout for radar multi-provider queries
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const cached = getSavedRadarCache()
+  const raw = await getSavedRadarCache();
+  const cached = raw
     .map((c) => {
       if (typeof c.viewToFollowerRatio !== 'number') {
         const followers = c.creator.subscriberOrFollowerCount || 0;
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
     for (const kw of keywords.slice(0, 4)) {
       // 1. Check keyword cache first if not forced refresh
       if (!forceRefresh) {
-        const cachedResults = getKeywordSearchCache(kw, platform, 24); // 24-hour cache
+        const cachedResults = await getKeywordSearchCache(kw, platform, 24); // 24-hour cache
         if (cachedResults && cachedResults.length > 0) {
           const matchingCache = cachedResults.filter((c) => {
             const viewsOk = minViews <= 0 || c.viewCount >= minViews;
@@ -113,10 +114,12 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Save to keyword cache and master registry
+      // Save to keyword cache and master registry (in parallel - neither blocks the other)
       if (kwCandidates.length > 0) {
-        saveKeywordSearchCache(kw, platform, kwCandidates);
-        kwCandidates.forEach((c) => saveVideoToRegistry(c));
+        await Promise.all([
+          saveKeywordSearchCache(kw, platform, kwCandidates),
+          saveVideosToRegistry(kwCandidates.map((c) => ({ candidate: c })))
+        ]);
         candidates.push(...kwCandidates);
       }
     }
@@ -154,7 +157,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (ranked.length > 0) {
-      saveRadarCache(ranked);
+      await saveRadarCache(ranked);
     }
 
     return NextResponse.json({
