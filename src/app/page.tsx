@@ -658,7 +658,8 @@ export default function HomePage() {
       if (rawDigits.length === 10) rawDigits = `91${rawDigits}`;
 
       const title = c.title || b.title || 'Outlier Reel';
-      const message = `🔥 New Outlier for your review\n"${title}"\n\n👉 Swipe through the 6-reasons breakdown & approve/disapprove here:\n${data.url}`;
+      const videoUrl = c.url || b.candidateUrl || '';
+      const message = `🔥 New Outlier for your review\n"${title}"\n\n🎬 Watch the video:\n${videoUrl}\n\n👉 Swipe through the 6-reasons breakdown & approve/disapprove here:\n${data.url}`;
       const encoded = encodeURIComponent(message);
       const waUrl = rawDigits
         ? `https://api.whatsapp.com/send?phone=${rawDigits}&text=${encoded}`
