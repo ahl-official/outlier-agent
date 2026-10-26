@@ -73,11 +73,13 @@ async function callGeminiMultimodal(
   frameHighlights: any[];
   expertVerdict: string;
 } | null> {
+  // gemini-2.5-flash-lite tried first: confirmed fast and reliable in testing. gemini-1.5-flash
+  // and gemini-2.0-flash are dropped - both confirmed 404 (deprecated/unavailable on this API
+  // version; Google's own error for 2.0-flash points to gemini-3.8-flash as the replacement).
   const modelsToTry = [
-    'gemini-flash-latest',
-    'gemini-1.5-flash',
     'gemini-2.5-flash-lite',
-    'gemini-2.0-flash'
+    'gemini-flash-latest',
+    'gemini-3.8-flash'
   ];
 
   const userPrompt = `Video Title: "${candidate.title}"

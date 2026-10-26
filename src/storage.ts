@@ -1,5 +1,5 @@
 import { getSupabase } from './lib/supabase';
-import { BoardItem, BoardStatus, OutlierCandidate, DetailedOutlierBreakdown } from './types';
+import { BoardItem, BoardStatus, OutlierCandidate, DetailedOutlierBreakdown, SixReasonsAnalysis } from './types';
 
 // In-memory fallback so the app never hard-crashes if Supabase is briefly unreachable.
 // This is NOT the source of truth (Supabase is) - it only serves stale-but-usable data
@@ -569,4 +569,110 @@ export async function saveTeamMembers(members: TeamMember[]): Promise<TeamMember
     console.warn(`[Storage] saveTeamMembers failed: ${err.message}`);
   }
   return members;
+}
+
+// ---------------------------------------------------------------------
+// 7. SHAREABLE "SEND TO SIR" VISUAL REVIEW LINKS
+// ---------------------------------------------------------------------
+export interface ReviewLink {
+  id: string;
+  candidate: OutlierCandidate;
+  sixReasons: SixReasonsAnalysis;
+  videoUrl: string;
+  videoTitle?: string;
+  status: 'pending' | 'approved' | 'disapproved';
+  createdAt: string;
+  decidedAt?: string;
+}
+
+export async function createReviewLink(
+  candidate: OutlierCandidate,
+  sixReasons: SixReasonsAnalysis
+): Promise<ReviewLink | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  const id = Math.random().toString(36).substring(2, 10) + Date.now().toString(36).slice(-4);
+  const row: ReviewLink = {
+    id,
+    candidate,
+    sixReasons,
+    videoUrl: candidate.url,
+    videoTitle: candidate.title,
+    status: 'pending',
+    createdAt: new Date().toISOString()
+  };
+
+  try {
+    const { error } = await supabase.from('review_links').insert({
+      id: row.id,
+      candidate: row.candidate,
+      six_reasons: row.sixReasons,
+      video_url: row.videoUrl,
+      video_title: row.videoTitle,
+      status: row.status,
+      created_at: row.createdAt
+    });
+    if (error) throw error;
+    return row;
+  } catch (err: any) {
+    console.warn(`[Storage] createReviewLink failed: ${err.message}`);
+    return null;
+  }
+}
+
+export async function getReviewLink(id: string): Promise<ReviewLink | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase.from('review_links').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      candidate: data.candidate,
+      sixReasons: data.six_reasons,
+      videoUrl: data.video_url,
+      videoTitle: data.video_title ?? undefined,
+      status: data.status,
+      createdAt: data.created_at,
+      decidedAt: data.decided_at ?? undefined
+    };
+  } catch (err: any) {
+    console.warn(`[Storage] getReviewLink failed: ${err.message}`);
+    return null;
+  }
+}
+
+export async function decideReviewLink(id: string, status: 'approved' | 'disapproved'): Promise<ReviewLink | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  const decidedAt = new Date().toISOString();
+  try {
+    const { data, error } = await supabase
+      .from('review_links')
+      .update({ status, decided_at: decidedAt })
+      .eq('id', id)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      candidate: data.candidate,
+      sixReasons: data.six_reasons,
+      videoUrl: data.video_url,
+      videoTitle: data.video_title ?? undefined,
+      status: data.status,
+      createdAt: data.created_at,
+      decidedAt: data.decided_at ?? undefined
+    };
+  } catch (err: any) {
+    console.warn(`[Storage] decideReviewLink failed: ${err.message}`);
+    return null;
+  }
 }

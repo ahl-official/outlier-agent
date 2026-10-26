@@ -43,6 +43,67 @@ async function fetchImageAsDataUrl(url: string): Promise<string | null> {
   }
 }
 
+const GEMINI_INLINE_VIDEO_MAX_BYTES = 18 * 1024 * 1024; // keep headroom under Gemini's ~20MB inline request limit
+
+/**
+ * Downloads the actual video (with audio) for feeding directly to Gemini's multimodal input,
+ * instead of static frames. Cloud-safe for the common case: a direct MP4 CDN URL (e.g. Apify's
+ * Instagram `videoUrl`) only needs a plain HTTP fetch, no ffmpeg/yt-dlp binary required, so this
+ * works on Vercel too. yt-dlp is only used as a local-dev fallback when no direct MP4 is known
+ * (e.g. YouTube, where there's no direct file URL without a downloader tool).
+ */
+export async function downloadVideoForGemini(
+  videoUrl: string,
+  directVideoUrl?: string
+): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  // 1. Direct MP4 CDN URL - plain fetch, works everywhere including serverless
+  const mediaSourceUrl = directVideoUrl || (videoUrl.endsWith('.mp4') ? videoUrl : null);
+  if (mediaSourceUrl && mediaSourceUrl.startsWith('http')) {
+    try {
+      const res = await fetch(mediaSourceUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(20000)
+      });
+      if (res.ok) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length > 5000 && buf.length <= GEMINI_INLINE_VIDEO_MAX_BYTES) {
+          return { buffer: buf, mimeType: 'video/mp4' };
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[FFmpeg] Direct MP4 download for Gemini failed: ${err.message}`);
+    }
+  }
+
+  // 2. yt-dlp fallback - only works where the binary is installed (local dev, not Vercel)
+  const hasYtDlp = await isToolAvailable('yt-dlp');
+  if (hasYtDlp && videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') || videoUrl.includes('instagram.com'))) {
+    const tempDir = path.join(os.tmpdir(), `outlier_gemini_video_${Date.now()}_${Math.random().toString(36).substring(7)}`);
+    const tempClipPath = path.join(tempDir, 'clip.mp4');
+    try {
+      await fs.promises.mkdir(tempDir, { recursive: true });
+      const sizeLimitMb = Math.floor(GEMINI_INLINE_VIDEO_MAX_BYTES / (1024 * 1024));
+      const ytDlpCmd = `yt-dlp --no-warnings --no-check-certificates --socket-timeout 15 --max-filesize ${sizeLimitMb}M -f "b/worstvideo/worst/bestvideo" -o "${tempClipPath}" --force-overwrites "${videoUrl}"`;
+      await execAsync(ytDlpCmd, { timeout: 35000 });
+      if (fs.existsSync(tempClipPath)) {
+        const stat = fs.statSync(tempClipPath);
+        if (stat.size > 1024 && stat.size <= GEMINI_INLINE_VIDEO_MAX_BYTES) {
+          const buffer = await fs.promises.readFile(tempClipPath);
+          return { buffer, mimeType: 'video/mp4' };
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[FFmpeg] yt-dlp download for Gemini failed: ${err.message}`);
+    } finally {
+      try {
+        await fs.promises.rm(tempDir, { recursive: true, force: true });
+      } catch {}
+    }
+  }
+
+  return null;
+}
+
 /**
  * Extracts key frames from a video URL (YouTube, Instagram, or direct video).
  * Supports:

@@ -207,7 +207,32 @@ export interface DetailedOutlierBreakdown {
 
   sopTaxonomy?: SOPTaxonomy;
 
+  sixReasonsAnalysis?: SixReasonsAnalysis;
+
   createdAt: string;
+}
+
+/**
+ * Simple, presentation-ready reel analysis: exactly 6 reasons it worked, plus a separate
+ * first-6-seconds text/visual/audio hook breakdown. No hashtags, no forced templates - the
+ * reasons must be specific to this video's actual format (testimonial, transformation, etc).
+ */
+export interface SixReasonsAnalysis {
+  reelCategory: string;
+  firstSixSeconds: {
+    textHook: string;
+    visualHook: string;
+    audioHook: string;
+  };
+  sixReasons: {
+    heading: string;
+    paragraph: string;
+  }[];
+  creativeAdaptation: string;
+  closingLesson: string;
+  /** false when the model only had static frames + caption (no real audio) to work with */
+  analyzedWithAudio: boolean;
+  modelUsed: string;
 }
 
 // Alias for backwards compatibility if needed

@@ -287,6 +287,7 @@ export default function HomePage() {
     breakdown?: DetailedOutlierBreakdown | null;
     candidate?: OutlierCandidate | null;
   } | null>(null);
+  const [isSendingVisualReview, setIsSendingVisualReview] = useState<boolean>(false);
 
   // Google Sheets & Team Quota Tracker state
   interface TeamMemberConfig {
@@ -610,6 +611,73 @@ export default function HomePage() {
     showToast('Redirecting to WhatsApp & saving to Google Sheet... 🚀');
     await handleLogToSheet(b, c, false);
     setShowWhatsAppModal(false);
+  };
+
+  const handleSendVisualReviewToSir = async (
+    breakdown?: DetailedOutlierBreakdown | null,
+    candidate?: OutlierCandidate | null
+  ) => {
+    const b = breakdown || currentBreakdown;
+    const c = candidate || currentCandidate;
+
+    if (!b?.sixReasonsAnalysis) {
+      showToast('No "6 Reasons" analysis available for this video yet — run Analyze first.');
+      return;
+    }
+    if (!c) {
+      showToast('No candidate selected to share');
+      return;
+    }
+
+    // Open a blank tab synchronously, in direct response to the click, before any `await` -
+    // browsers only allow window.open() without being blocked as a popup when it happens
+    // immediately inside a user gesture. Opening it AFTER awaiting network calls (as this used
+    // to) gets silently blocked - the toast still fires, but no WhatsApp tab ever appears. We
+    // navigate this already-open tab to the real WhatsApp URL once it's ready.
+    const waWindow = typeof window !== 'undefined' ? window.open('', '_blank') : null;
+
+    setIsSendingVisualReview(true);
+    try {
+      // Log to sheet first so the row exists for the decide step to mark later (silent: duplicate is fine, it just means it's already logged)
+      await handleLogToSheet(b, c, true);
+
+      const res = await fetch('/api/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidate: c, sixReasonsAnalysis: b.sixReasonsAnalysis })
+      });
+      const data = await res.json();
+      if (!data.success || !data.url) {
+        showToast(data.error || 'Could not create review link');
+        waWindow?.close();
+        return;
+      }
+
+      const currentPhone = sirPhone.trim() || DEFAULT_SIR_PHONE;
+      let rawDigits = currentPhone.replace(/[^0-9]/g, '');
+      if (rawDigits.length === 10) rawDigits = `91${rawDigits}`;
+
+      const title = c.title || b.title || 'Outlier Reel';
+      const message = `🔥 New Outlier for your review\n"${title}"\n\n👉 Swipe through the 6-reasons breakdown & approve/disapprove here:\n${data.url}`;
+      const encoded = encodeURIComponent(message);
+      const waUrl = rawDigits
+        ? `https://api.whatsapp.com/send?phone=${rawDigits}&text=${encoded}`
+        : `https://api.whatsapp.com/send?text=${encoded}`;
+
+      if (waWindow) {
+        waWindow.location.href = waUrl;
+      } else if (typeof window !== 'undefined') {
+        // Popup was blocked outright (window.open returned null) - try anyway so the browser's
+        // own "popup blocked" indicator shows up, which is at least an honest signal.
+        window.open(waUrl, '_blank', 'noopener,noreferrer');
+      }
+      showToast('WhatsApp opened with the link ready — tap Send inside WhatsApp to actually deliver it to Sir. 📱');
+    } catch (err: any) {
+      waWindow?.close();
+      showToast(err.message || 'Error creating visual review link');
+    } finally {
+      setIsSendingVisualReview(false);
+    }
   };
 
   const handleCopyWhatsAppMessage = async () => {
@@ -1960,6 +2028,30 @@ export default function HomePage() {
                       <WhatsAppIcon size={16} color="#fff" /> Send to Sir on WhatsApp
                     </button>
 
+                    {currentBreakdown.sixReasonsAnalysis && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenWhatsAppModal(currentBreakdown, currentCandidate || undefined)}
+                        disabled={isSendingVisualReview}
+                        title="Review/change Sir's number, then send a swipeable 6-card visual review link"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '10px 16px',
+                          borderRadius: 'var(--radius-sm)',
+                          border: '1px solid rgba(251, 191, 36, 0.4)',
+                          background: 'rgba(251, 191, 36, 0.12)',
+                          color: 'var(--gold-400)',
+                          fontWeight: 700,
+                          fontSize: '0.86rem',
+                          cursor: isSendingVisualReview ? 'wait' : 'pointer'
+                        }}
+                      >
+                        📱 {isSendingVisualReview ? 'Creating Link...' : 'Send Visual Review to Sir'}
+                      </button>
+                    )}
+
                     {currentCandidate && (() => {
                       const isSaved = boardItems.some((b) => b.candidate.url === currentCandidate.url || b.candidate.id === currentCandidate.id);
                       return (
@@ -2045,6 +2137,91 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
+
+              {/* Simple 6-Reasons Analysis + First 6 Seconds Hook Breakdown */}
+              {currentBreakdown.sixReasonsAnalysis && (
+                <div className="glass-panel" style={{ padding: '24px', border: '1px solid rgba(245, 158, 11, 0.4)', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.05), rgba(0, 0, 0, 0.4))' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <CheckCircle size={18} color="var(--gold-400)" />
+                      <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        6 Reasons It Worked — {currentBreakdown.sixReasonsAnalysis.reelCategory}
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: '0.72rem',
+                      background: currentBreakdown.sixReasonsAnalysis.analyzedWithAudio ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.08)',
+                      color: currentBreakdown.sixReasonsAnalysis.analyzedWithAudio ? '#34d399' : 'var(--text-dim)',
+                      border: `1px solid ${currentBreakdown.sixReasonsAnalysis.analyzedWithAudio ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-subtle)'}`,
+                      padding: '3px 10px',
+                      borderRadius: '9999px',
+                      fontWeight: 700
+                    }}>
+                      {currentBreakdown.sixReasonsAnalysis.analyzedWithAudio ? '🔊 Watched with audio' : '🖼️ Frames + caption only'}
+                    </span>
+                  </div>
+
+                  {/* First 6 Seconds: Text / Visual / Audio Hook */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+                    <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '4px' }}>📝 Text Hook (0-6s)</div>
+                      <div style={{ fontSize: '0.86rem', color: '#e2e8f0' }}>{currentBreakdown.sixReasonsAnalysis.firstSixSeconds.textHook}</div>
+                    </div>
+                    <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '4px' }}>🎬 Visual Hook (0-6s)</div>
+                      <div style={{ fontSize: '0.86rem', color: '#e2e8f0' }}>{currentBreakdown.sixReasonsAnalysis.firstSixSeconds.visualHook}</div>
+                    </div>
+                    <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '4px' }}>🔊 Audio Hook (0-6s)</div>
+                      <div style={{ fontSize: '0.86rem', color: '#e2e8f0' }}>{currentBreakdown.sixReasonsAnalysis.firstSixSeconds.audioHook}</div>
+                    </div>
+                  </div>
+
+                  {/* Six Reasons */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '18px' }}>
+                    {currentBreakdown.sixReasonsAnalysis.sixReasons.map((reason, idx) => (
+                      <div key={idx} style={{ display: 'flex', gap: '10px' }}>
+                        <div style={{
+                          flexShrink: 0,
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          background: 'rgba(245, 158, 11, 0.15)',
+                          border: '1px solid rgba(245, 158, 11, 0.4)',
+                          color: 'var(--gold-400)',
+                          fontSize: '0.78rem',
+                          fontWeight: 800,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          {idx + 1}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#fff', marginBottom: '2px' }}>{reason.heading}</div>
+                          <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>{reason.paragraph}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Creative Adaptation */}
+                  {currentBreakdown.sixReasonsAnalysis.creativeAdaptation && (
+                    <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 'var(--radius-sm)', padding: '14px', marginBottom: '10px' }}>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--gold-400)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '6px' }}>
+                        💡 How We Adapt This
+                      </div>
+                      <div style={{ fontSize: '0.86rem', color: '#e2e8f0', lineHeight: 1.6 }}>{currentBreakdown.sixReasonsAnalysis.creativeAdaptation}</div>
+                    </div>
+                  )}
+
+                  {currentBreakdown.sixReasonsAnalysis.closingLesson && (
+                    <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.6 }}>
+                      {currentBreakdown.sixReasonsAnalysis.closingLesson}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Creator Recent Uploads Benchmark (if available) */}
               {currentBreakdown.creator.recentUploads && currentBreakdown.creator.recentUploads.length > 0 && (
@@ -3655,6 +3832,30 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
                     <FileSpreadsheet size={15} />
                     {isLoggingToSheet ? 'Saving...' : 'Save to Sheet Only'}
                   </button>
+
+                  {breakdown?.sixReasonsAnalysis && (
+                    <button
+                      type="button"
+                      onClick={() => handleSendVisualReviewToSir(breakdown, candidate)}
+                      disabled={isSendingVisualReview}
+                      title="Send a swipeable 6-card visual review link instead of the long text report"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 20px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid rgba(251, 191, 36, 0.4)',
+                        background: 'rgba(251, 191, 36, 0.12)',
+                        color: 'var(--gold-400)',
+                        fontWeight: 700,
+                        fontSize: '0.88rem',
+                        cursor: isSendingVisualReview ? 'wait' : 'pointer'
+                      }}
+                    >
+                      📱 {isSendingVisualReview ? 'Creating Link...' : 'Send Visual Review →'}
+                    </button>
+                  )}
 
                   <button
                     type="button"

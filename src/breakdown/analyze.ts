@@ -4,6 +4,7 @@ import { deriveSOPTaxonomy } from '../scoring/outlier';
 
 import { extractFramesWithFfmpeg } from './ffmpeg';
 import { runSocialMediaExpertAgent } from './social-agent';
+import { generateSixReasonsAnalysis } from './hook-analysis';
 
 export interface BreakdownOptions {
   aiApiKey?: string;
@@ -17,6 +18,7 @@ export async function analyzeOutlierVideo(
   candidate: OutlierCandidate,
   options?: BreakdownOptions
 ): Promise<DetailedOutlierBreakdown> {
+  const functionStartTime = Date.now();
   const title = decodeHtmlEntities(candidate.title || '');
   const caption = decodeHtmlEntities(candidate.caption || '');
   const combinedText = `${title} ${caption}`;
@@ -84,28 +86,42 @@ export async function analyzeOutlierVideo(
     coreTopic
   });
 
-  // 9. Extract sequential video frames through FFmpeg & run Social Media Expert AI Agent
-  let extractedFrames: ExtractedVideoFrame[] = [];
-  try {
-    extractedFrames = await extractFramesWithFfmpeg(
-      candidate.url,
-      candidate.thumbnailUrl,
-      candidate.id,
-      { maxFrames: 6, sampleDurationSeconds: 6, timeoutMs: 35000 },
-      candidate.videoUrl,
-      candidate.mediaUrls
-    );
-  } catch (err: any) {
-    console.warn('[analyzeOutlierVideo] Frame extraction note:', err.message);
-  }
-
-  // 10. Execute AI Agent with System Prompt (analyzing FFmpeg frames)
+  // 9. Kick off FFmpeg frame extraction and the "6 reasons" video analysis at the same time.
+  // They're independent: the six-reasons call downloads the video itself and, when that
+  // succeeds (the common Instagram case), never needs the extracted frames at all - so it must
+  // not be made to wait for frame extraction to finish first. Passing the frames promise lets it
+  // fall back to frames-only only if it actually needs to (no video available).
   const apiKeyToUse = options?.aiApiKey || process.env.GEMINI_API_KEY;
-  const aiAgentAudit = await runSocialMediaExpertAgent(
-    candidate,
-    extractedFrames,
-    apiKeyToUse
-  );
+  const framesPromise: Promise<ExtractedVideoFrame[]> = extractFramesWithFfmpeg(
+    candidate.url,
+    candidate.thumbnailUrl,
+    candidate.id,
+    { maxFrames: 6, sampleDurationSeconds: 6, timeoutMs: 35000 },
+    candidate.videoUrl,
+    candidate.mediaUrls
+  ).catch((err: any) => {
+    console.warn('[analyzeOutlierVideo] Frame extraction note:', err.message);
+    return [];
+  });
+
+  // Capped to whatever's left of a ~50s overall budget (on top of its own internal timeout) so
+  // a slow video download/Gemini response can never blow past the breakdown route's 60s limit -
+  // it's a bonus section, not worth risking the entire request for.
+  const elapsedSoFar = Date.now() - functionStartTime;
+  const remainingBudgetMs = Math.max(8000, 50000 - elapsedSoFar);
+  const sixReasonsWithCap = Promise.race([
+    generateSixReasonsAnalysis(candidate, framesPromise, apiKeyToUse).catch((err) => {
+      console.warn('[analyzeOutlierVideo] Six reasons analysis note:', err.message);
+      return null;
+    }),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), remainingBudgetMs))
+  ]);
+
+  // The frame-based agent genuinely needs resolved frames, so it waits here - but by this point
+  // the six-reasons call has already been running concurrently since step 9.
+  const extractedFrames = await framesPromise;
+  const aiAgentAudit = await runSocialMediaExpertAgent(candidate, extractedFrames, apiKeyToUse);
+  const sixReasonsAnalysis = await sixReasonsWithCap;
 
   // Enrich strategist verdict with AI agent's winning element & outlier decider if available
   if (aiAgentAudit.winningElement) {
@@ -163,6 +179,7 @@ export async function analyzeOutlierVideo(
     deepVisualAnalysis,
     strategistVerdict,
     aiAgentAudit,
+    sixReasonsAnalysis: sixReasonsAnalysis || undefined,
     sopTaxonomy: candidate.sopTaxonomy || deriveSOPTaxonomy({
       title,
       caption,

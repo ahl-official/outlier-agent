@@ -67,3 +67,15 @@ create table if not exists team_members (
   phone text,
   notes text
 );
+
+-- 7. Shareable "Send to Sir" visual review links (swipeable 6-reasons card view)
+create table if not exists review_links (
+  id text primary key, -- short random token, used in the public /review/<id> URL
+  candidate jsonb not null,
+  six_reasons jsonb not null,
+  video_url text not null,
+  video_title text,
+  status text not null default 'pending', -- pending | approved | disapproved
+  created_at timestamptz not null default now(),
+  decided_at timestamptz
+);

@@ -1,45 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGoogleSheetsClient } from '@/google-sheets';
 import { getTeamMembers } from '@/storage';
+import { normalizeVideoUrl } from '@/lib/video-url';
 
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID || '0AIG06pZpg4KBUk9PVA';
 const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID || '14nj56PxfqLHcv8xTB03_RKSfyDD2s-C9Psk3LMnWGdU';
 const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit`;
 const FOLDER_URL = `https://drive.google.com/drive/folders/${FOLDER_ID}`;
-
-function normalizeVideoUrl(url: string): string {
-  if (!url) return '';
-  try {
-    const raw = url.trim();
-    const parsed = new URL(raw.startsWith('http') ? raw : `https://${raw}`);
-    
-    // YouTube variations: watch?v=, youtu.be/, /shorts/
-    if (parsed.hostname.includes('youtube.com') || parsed.hostname.includes('youtu.be')) {
-      if (parsed.hostname.includes('youtu.be')) {
-        const videoId = parsed.pathname.replace(/^\//, '').split('/')[0]?.split('?')[0];
-        if (videoId) return `yt:${videoId}`;
-      }
-      if (parsed.pathname.includes('/shorts/')) {
-        const shortId = parsed.pathname.split('/shorts/')[1]?.split('/')[0]?.split('?')[0];
-        if (shortId) return `yt:${shortId}`;
-      }
-      const v = parsed.searchParams.get('v');
-      if (v) return `yt:${v}`;
-    }
-
-    // Instagram variations: /reel/CODE/, /p/CODE/
-    if (parsed.hostname.includes('instagram.com')) {
-      const match = parsed.pathname.match(/\/(reel|p)\/([A-Za-z0-9_-]+)/);
-      if (match && match[2]) {
-        return `ig:${match[2]}`;
-      }
-    }
-
-    return (parsed.origin + parsed.pathname).replace(/\/$/, '').toLowerCase();
-  } catch {
-    return url.trim().toLowerCase();
-  }
-}
 
 function getISTTimestamp(): { formattedDate: string; rawTimestamp: string } {
   const now = new Date();
