@@ -158,3 +158,28 @@ export const ALCHEMANE_SPECIFIC_KEYWORDS: string[] = ALCHEMANE_CATEGORY_GROUPS.f
 export const DEFAULT_RADAR_KEYWORDS: string[] = AHL_SPECIFIC_KEYWORDS;
 
 export const NICHE_KEYWORD_GROUPS = AHL_CATEGORY_GROUPS;
+
+// Unambiguous on their own - nothing else in common English uses these words.
+const DISTINCTIVE_HAIR_TERMS = [
+  'toupee', 'topee', 'wig', 'topper', 'hairpiece', 'hairline', 'hair system', 'hair replacement', 'transplant'
+];
+
+// Ambiguous outside a hair context ("Sour Patch Kids", "cable extension", "bang" as in loud
+// noise/fringe benefit) - only count these if the word "hair" also appears as its own word
+// nearby. Word-boundary checked so "haircut"/"hairstyle" (which contain "hair" as a substring
+// but aren't a standalone "hair" word+space) don't themselves satisfy the proximity check.
+const AMBIGUOUS_HAIR_TERMS = ['patch', 'extension', 'bang', 'fringe', 'clip-in', 'clip-on'];
+const STANDALONE_HAIR_WORD = /\bhair\b/;
+
+/**
+ * Relevance gate applied to every search result before it's accepted as a candidate - rejects
+ * content that only loosely/fuzzy-matched the search query (e.g. YouTube's relevance ranking
+ * surfacing an unrelated "hair" video) but isn't actually about a hair replacement product.
+ */
+export function isCoreHairContent(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  if (DISTINCTIVE_HAIR_TERMS.some((term) => lower.includes(term))) return true;
+  if (STANDALONE_HAIR_WORD.test(lower) && AMBIGUOUS_HAIR_TERMS.some((term) => lower.includes(term))) return true;
+  return false;
+}

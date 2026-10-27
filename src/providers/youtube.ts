@@ -1,5 +1,6 @@
 import { OutlierCandidate, RealComment } from '../types';
 import { calculateOutlierScore, deriveSOPTaxonomy } from '../scoring/outlier';
+import { isCoreHairContent } from '../keywords';
 
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 
@@ -124,6 +125,13 @@ async function searchYouTubeOutliersForDays(
     const rawTitle = snippet.title || 'Untitled';
     const cleanTitle = decodeHtmlEntities(rawTitle);
     const cleanDesc = decodeHtmlEntities(snippet.description || '');
+
+    // Relevance gate: YouTube's search is fuzzy/relevance-ranked, not exact-phrase, so a query
+    // like "Hair patch for men" can surface a completely unrelated video that just happens to
+    // mention "hair" once. Require an actual hair-replacement product term to be present.
+    if (!isCoreHairContent(`${cleanTitle} ${cleanDesc}`)) {
+      continue;
+    }
 
     const score = calculateOutlierScore({
       viewCount,

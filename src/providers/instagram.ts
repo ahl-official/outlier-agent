@@ -1,5 +1,6 @@
 import { OutlierCandidate } from '../types';
 import { calculateOutlierScore, deriveSOPTaxonomy } from '../scoring/outlier';
+import { isCoreHairContent } from '../keywords';
 
 const APIFY_BASE = 'https://api.apify.com/v2';
 const SEARCH_ACTOR = 'apify~instagram-search-scraper';
@@ -206,9 +207,13 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
   const rawReels = reelItems.length > 0 ? reelItems : validItems;
 
   // 1. First filter: only consider reels reaching the minimum views threshold (in Lakhs or Millions)
+  //    AND actually about a hair-replacement product - Instagram's "popular reels" search isn't
+  //    exact-phrase either, so this also keeps irrelevant matches from burning a follower lookup.
   const highViewItems = rawReels.filter((item) => {
     const playCount = item.videoPlayCount || item.videoViewCount || item.viewsCount || item.likesCount * 12 || 0;
-    return minViews <= 0 || playCount >= minViews;
+    const viewsOk = minViews <= 0 || playCount >= minViews;
+    const relevant = isCoreHairContent(item.caption || item.text || '');
+    return viewsOk && relevant;
   });
 
   if (highViewItems.length === 0) {
