@@ -198,8 +198,8 @@ export default function FormatMapTab({ currentBrand }: Props) {
           {lead && <p className="fm-lead">{lead}</p>}
           {map.cells.some((c) => c.videos.some((v) => v.multiplier >= 100)) && (
             <div className="fm-note">
-              Multipliers above 100x show as &quot;100x+&quot;. The radar&apos;s creator baselines are rough (YouTube compares an old viral video with the channel&apos;s
-              recent uploads, Instagram estimates the baseline from followers), so treat the exact number as &quot;huge&quot;, not as a measurement.
+              Multipliers above 100x show as &quot;100x+&quot;. Outliers marked &quot;old baseline&quot; were scored before real creator baselines existed and are inflated -
+              scan their keywords again on the Discovery Radar to re-score them.
             </div>
           )}
           {map.taggedCount < 30 && (
@@ -288,6 +288,8 @@ export default function FormatMapTab({ currentBrand }: Props) {
                         <div className="fm-video-meta">
                           <b style={{ color: 'var(--gold-400)' }}>{formatMultiplier(v.multiplier)}</b> their normal
                           {v.labelSource === 'thumbnail' && <span className="fm-tag-thumb"> · tagged from thumbnail</span>}
+                          {!v.baselineMethod && <span className="fm-tag-thumb"> · old baseline</span>}
+                          {v.baselineMethod === 'estimated' && <span className="fm-tag-thumb"> · estimated baseline</span>}
                         </div>
                       </div>
                       <ExternalLink size={14} />

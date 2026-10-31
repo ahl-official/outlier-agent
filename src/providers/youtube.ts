@@ -1,4 +1,4 @@
-import { OutlierCandidate, RealComment } from '../types';
+import { OutlierCandidate, RealComment, BaselineMethod } from '../types';
 import { calculateOutlierScore, deriveSOPTaxonomy } from '../scoring/outlier';
 import { isCoreHairContent } from '../keywords';
 
@@ -9,6 +9,7 @@ interface ChannelCacheEntry {
   subCount: number;
   title: string;
   avatarUrl?: string;
+  uploadsPlaylistId?: string;
   recentUploads?: { title: string; views: number; publishedAt?: string }[];
   timestamp: number;
 }
@@ -16,6 +17,142 @@ interface ChannelCacheEntry {
 // In-memory cache for channel medians to conserve API quota
 const channelMedianCache = new Map<string, ChannelCacheEntry>();
 const CACHE_TTL_MS = 1000 * 60 * 60 * 6; // 6 hours
+
+// ---------------------------------------------------------------------
+// Per-video baseline: "how does this video do compared with the creator's normal?"
+//
+// Comparing a 3-year-old viral Short with the channel's last 8 uploads gave 159,384x outliers -
+// channels that blew up once and then went quiet look like miracles. So the baseline is the
+// channel's own uploads published closest in time to THIS video, of the same type (Shorts are
+// compared with Shorts), the way Sandcastles-style outlier scores work.
+//
+// Cost: the uploads list is 1 quota unit per 50 videos (paged back at most BASELINE_MAX_PAGES),
+// plus 1 unit for the neighbours' stats - against 100 units for every search call.
+// ---------------------------------------------------------------------
+const BASELINE_MAX_PAGES = 6; // 300 uploads back
+const BASELINE_NEIGHBOURS = 30;
+const BASELINE_MIN_SAMPLE = 5;
+const SHORT_MAX_SECONDS = 180; // YouTube Shorts can run up to 3 minutes
+
+export interface VideoBaseline {
+  medianViews: number;
+  sampleSize: number;
+  method: BaselineMethod;
+}
+
+interface UploadsListEntry {
+  items: { videoId: string; publishedAt: string }[];
+  nextPageToken?: string;
+  pagesFetched: number;
+  timestamp: number;
+}
+const uploadsListCache = new Map<string, UploadsListEntry>();
+
+async function getUploadsReaching(playlistId: string, targetMs: number, apiKey: string): Promise<UploadsListEntry> {
+  let entry = uploadsListCache.get(playlistId);
+  if (!entry || Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    entry = { items: [], pagesFetched: 0, timestamp: Date.now() };
+    uploadsListCache.set(playlistId, entry);
+  }
+
+  // Newest first: keep paging until we hold half a neighbourhood of uploads older than the target
+  const olderThanTarget = () => entry!.items.filter((it) => Date.parse(it.publishedAt) < targetMs).length;
+  while (
+    (entry.pagesFetched === 0 || entry.nextPageToken) &&
+    entry.pagesFetched < BASELINE_MAX_PAGES &&
+    olderThanTarget() < BASELINE_NEIGHBOURS / 2
+  ) {
+    const url = new URL(`${YOUTUBE_API_BASE}/playlistItems`);
+    url.searchParams.set('part', 'contentDetails');
+    url.searchParams.set('playlistId', playlistId);
+    url.searchParams.set('maxResults', '50');
+    if (entry.nextPageToken) url.searchParams.set('pageToken', entry.nextPageToken);
+    url.searchParams.set('key', apiKey);
+
+    const res = await fetch(url.toString());
+    if (!res.ok) break;
+    const data = await res.json();
+    for (const it of data.items || []) {
+      const videoId = it.contentDetails?.videoId;
+      const publishedAt = it.contentDetails?.videoPublishedAt;
+      if (videoId && publishedAt) entry.items.push({ videoId, publishedAt });
+    }
+    entry.nextPageToken = data.nextPageToken;
+    entry.pagesFetched += 1;
+  }
+  return entry;
+}
+
+async function getVideoBaseline(
+  playlistId: string,
+  videoId: string,
+  publishedAt: string,
+  durationSeconds: number,
+  apiKey: string
+): Promise<VideoBaseline | null> {
+  const targetMs = Date.parse(publishedAt);
+  if (!playlistId || isNaN(targetMs)) return null;
+
+  try {
+    const uploads = await getUploadsReaching(playlistId, targetMs, apiKey);
+    const others = uploads.items.filter((it) => it.videoId !== videoId);
+    if (others.length < BASELINE_MIN_SAMPLE) return null;
+
+    // 50 nearest in time (one videos.list call), then keep the same type
+    const nearest = [...others]
+      .sort((a, b) => Math.abs(Date.parse(a.publishedAt) - targetMs) - Math.abs(Date.parse(b.publishedAt) - targetMs))
+      .slice(0, 50);
+    const stats = await getVideoDetailsBatch(nearest.map((n) => n.videoId), apiKey);
+
+    const isShort = durationSeconds > 0 && durationSeconds <= SHORT_MAX_SECONDS;
+    const withViews = nearest
+      .map((n) => stats.get(n.videoId))
+      .filter(Boolean)
+      .map((v: any) => ({
+        views: parseInt(v.statistics?.viewCount || '0', 10),
+        short: parseIsoDuration(v.contentDetails?.duration || '') <= SHORT_MAX_SECONDS
+      }));
+    const sameType = withViews.filter((v) => v.short === isShort);
+    const sample = (sameType.length >= BASELINE_MIN_SAMPLE ? sameType : withViews).slice(0, BASELINE_NEIGHBOURS);
+    if (sample.length < BASELINE_MIN_SAMPLE) return null;
+
+    const views = sample.map((v) => v.views).sort((a, b) => a - b);
+    const mid = Math.floor(views.length / 2);
+    const median = views.length % 2 ? views[mid] : Math.round((views[mid - 1] + views[mid]) / 2);
+
+    // Didn't page back far enough to surround the video: the oldest uploads we reached stand in
+    const oldestReached = Math.min(...uploads.items.map((it) => Date.parse(it.publishedAt)));
+    const method: BaselineMethod = uploads.nextPageToken && oldestReached > targetMs ? 'oldest-available' : 'nearby-uploads';
+
+    return { medianViews: Math.max(median, 50), sampleSize: sample.length, method };
+  } catch (err: any) {
+    console.warn(`[YouTube] baseline for ${videoId} failed: ${err.message}`);
+    return null;
+  }
+}
+
+/** Baselines for many videos at once (each channel's uploads list is fetched once and shared). */
+async function getVideoBaselines(
+  videos: { videoId: string; playlistId?: string; publishedAt: string; durationSeconds: number }[],
+  apiKey: string
+): Promise<Map<string, VideoBaseline>> {
+  const result = new Map<string, VideoBaseline>();
+  // one channel at a time per playlist so the shared uploads cache isn't paged twice in parallel
+  const byPlaylist = new Map<string, typeof videos>();
+  for (const v of videos) {
+    if (!v.playlistId) continue;
+    byPlaylist.set(v.playlistId, [...(byPlaylist.get(v.playlistId) || []), v]);
+  }
+  await Promise.all(
+    Array.from(byPlaylist.entries()).map(async ([playlistId, list]) => {
+      for (const v of list) {
+        const baseline = await getVideoBaseline(playlistId, v.videoId, v.publishedAt, v.durationSeconds, apiKey);
+        if (baseline) result.set(v.videoId, baseline);
+      }
+    })
+  );
+  return result;
+}
 
 export interface YouTubeSearchOptions {
   keyword: string;
@@ -86,6 +223,25 @@ async function searchYouTubeOutliersForDays(
   const channelIds = Array.from(new Set(items.map((it: any) => it.snippet?.channelId).filter(Boolean))) as string[];
   const channelBaselines = await getChannelBaselines(channelIds, apiKey);
 
+  // 3b. Per-video baselines - only for videos that pass the cheap filters below, to save quota
+  const eligible = items.filter((item: any) => {
+    const details = videoDetails.get(item.id?.videoId);
+    const channel = channelBaselines.get(item.snippet?.channelId);
+    if (!details || !channel) return false;
+    if (minViews > 0 && parseInt(details.statistics?.viewCount || '0', 10) < minViews) return false;
+    if (minSubscribers > 0 && channel.subCount < minSubscribers) return false;
+    return isCoreHairContent(`${decodeHtmlEntities(item.snippet?.title || '')} ${decodeHtmlEntities(item.snippet?.description || '')}`);
+  });
+  const videoBaselines = await getVideoBaselines(
+    eligible.map((item: any) => ({
+      videoId: item.id.videoId,
+      playlistId: channelBaselines.get(item.snippet.channelId)?.uploadsPlaylistId,
+      publishedAt: item.snippet.publishedAt,
+      durationSeconds: parseIsoDuration(videoDetails.get(item.id.videoId)?.contentDetails?.duration || '')
+    })),
+    apiKey
+  );
+
   // 4. Transform and score candidates
   const candidates: OutlierCandidate[] = [];
 
@@ -133,9 +289,13 @@ async function searchYouTubeOutliersForDays(
       continue;
     }
 
+    const baseline = videoBaselines.get(videoId);
+    const medianViews = baseline?.medianViews ?? channelInfo.medianViews;
+    const multiplier = Math.round((viewCount / Math.max(medianViews, 50)) * 10) / 10;
+
     const score = calculateOutlierScore({
       viewCount,
-      medianViews: channelInfo.medianViews,
+      medianViews,
       publishedAt: snippet.publishedAt,
       likeCount,
       commentCount,
@@ -174,12 +334,14 @@ async function searchYouTubeOutliersForDays(
         username: channelInfo.title,
         displayName: channelInfo.title,
         avatarUrl: channelInfo.avatarUrl,
-        medianViews: channelInfo.medianViews,
+        medianViews,
+        sampleVideoCount: baseline?.sampleSize,
+        baselineMethod: baseline?.method ?? 'estimated',
         subscriberOrFollowerCount: channelInfo.subCount,
         profileUrl: `https://www.youtube.com/channel/${channelId}`,
         recentUploads: channelInfo.recentUploads
       },
-      outlierMultiplier: Math.round((viewCount / Math.max(channelInfo.medianViews, 50)) * 10) / 10,
+      outlierMultiplier: multiplier,
       viewToFollowerRatio,
       outlierScore: score.totalScore,
       matchedKeyword: options.keyword,
@@ -188,7 +350,7 @@ async function searchYouTubeOutliersForDays(
       sopTaxonomy: deriveSOPTaxonomy({
         title: cleanTitle,
         caption: cleanDesc,
-        multiplier: Math.round((viewCount / Math.max(channelInfo.medianViews, 50)) * 10) / 10,
+        multiplier,
         formatType: detectFormatType(cleanTitle, cleanDesc),
         likeCount,
         commentCount,
@@ -282,13 +444,23 @@ export async function getYouTubeVideoByUrl(rawUrlOrId: string): Promise<OutlierC
   const cleanTitle = decodeHtmlEntities(snippet.title || '');
   const cleanDesc = decodeHtmlEntities(snippet.description || '');
 
+  const baseline = await getVideoBaseline(
+    (channelInfo as ChannelCacheEntry).uploadsPlaylistId || '',
+    videoId,
+    snippet.publishedAt,
+    durationSeconds,
+    apiKey
+  );
+  const medianViews = baseline?.medianViews ?? channelInfo.medianViews;
+  const multiplier = Math.round((viewCount / Math.max(medianViews, 50)) * 10) / 10;
+
   const viewToFollowerRatio = channelInfo.subCount > 0
     ? Math.round((viewCount / channelInfo.subCount) * 10) / 10
     : 0;
 
   const score = calculateOutlierScore({
     viewCount,
-    medianViews: channelInfo.medianViews,
+    medianViews,
     publishedAt: snippet.publishedAt,
     likeCount,
     commentCount,
@@ -315,12 +487,14 @@ export async function getYouTubeVideoByUrl(rawUrlOrId: string): Promise<OutlierC
       username: channelInfo.title,
       displayName: channelInfo.title,
       avatarUrl: channelInfo.avatarUrl,
-      medianViews: channelInfo.medianViews,
+      medianViews,
+      sampleVideoCount: baseline?.sampleSize,
+      baselineMethod: baseline?.method ?? 'estimated',
       subscriberOrFollowerCount: channelInfo.subCount,
       profileUrl: `https://www.youtube.com/channel/${channelId}`,
       recentUploads: channelInfo.recentUploads
     },
-    outlierMultiplier: Math.round((viewCount / Math.max(channelInfo.medianViews, 50)) * 10) / 10,
+    outlierMultiplier: multiplier,
     viewToFollowerRatio,
     outlierScore: score.totalScore,
     matchedKeyword: 'direct-url',
@@ -329,7 +503,7 @@ export async function getYouTubeVideoByUrl(rawUrlOrId: string): Promise<OutlierC
     sopTaxonomy: deriveSOPTaxonomy({
       title: cleanTitle,
       caption: cleanDesc,
-      multiplier: Math.round((viewCount / Math.max(channelInfo.medianViews, 50)) * 10) / 10,
+      multiplier,
       formatType: detectFormatType(cleanTitle, cleanDesc),
       likeCount,
       commentCount,
@@ -455,6 +629,7 @@ async function getChannelBaselines(
           subCount,
           title: item.snippet?.title || 'Creator',
           avatarUrl: item.snippet?.thumbnails?.default?.url || '',
+          uploadsPlaylistId,
           recentUploads,
           timestamp: Date.now()
         };

@@ -374,7 +374,12 @@ export async function getKeywordSearchCache(keyword: string, platform: string, m
     const ageMs = Date.now() - new Date(data.searched_at).getTime();
     if (ageMs > maxAgeHours * 60 * 60 * 1000) return null;
 
-    return data.candidates;
+    // Results scored before per-video baselines existed carry no baselineMethod and wildly
+    // inflated multipliers - treat them as stale so the next scan re-scores them
+    const candidates: OutlierCandidate[] = data.candidates || [];
+    if (candidates.some((c) => !c.creator?.baselineMethod)) return null;
+
+    return candidates;
   } catch (err: any) {
     console.warn(`[Storage] getKeywordSearchCache failed: ${err.message}`);
     return null;

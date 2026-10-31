@@ -6,7 +6,10 @@ export interface CreatorStats {
   displayName: string;
   avatarUrl?: string;
   medianViews: number;
+  /** how many of the creator's own videos the median was taken over */
   sampleVideoCount?: number;
+  /** where medianViews came from - only 'estimated' is a guess rather than real view counts */
+  baselineMethod?: BaselineMethod;
   subscriberOrFollowerCount?: number;
   profileUrl?: string;
   recentUploads?: {
@@ -15,6 +18,14 @@ export interface CreatorStats {
     publishedAt?: string;
   }[];
 }
+
+/**
+ * - nearby-uploads: YouTube - the channel's uploads published closest to this video, same type (Short vs long)
+ * - oldest-available: YouTube - the video is older than the uploads we page back to, so the oldest ones we reached
+ * - recent-reels: Instagram - the creator's latest reels from their profile
+ * - estimated: no real view counts available - a guess from followers or channel averages
+ */
+export type BaselineMethod = 'nearby-uploads' | 'oldest-available' | 'recent-reels' | 'estimated';
 
 export type BrandTarget = 'AHL' | 'Alchemane';
 

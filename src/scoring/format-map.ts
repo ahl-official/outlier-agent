@@ -1,4 +1,4 @@
-import { BrandTarget, FormatLabels, OutlierCandidate, Platform } from '../types';
+import { BaselineMethod, BrandTarget, FormatLabels, OutlierCandidate, Platform } from '../types';
 import { AHL_SPECIFIC_KEYWORDS, ALCHEMANE_SPECIFIC_KEYWORDS } from '../keywords';
 import { FORMATS, EDITING_STYLES, isIncompatible } from './format-taxonomy';
 
@@ -24,6 +24,7 @@ export interface MapVideo {
   multiplier: number;
   brand: BrandTarget | null;
   labelSource: FormatLabels['source'];
+  baselineMethod?: BaselineMethod;
 }
 
 export interface MapCell {
@@ -239,7 +240,8 @@ function toMapVideo(candidate: OutlierCandidate, labels: FormatLabels): MapVideo
     views: candidate.viewCount,
     multiplier: round1(candidate.outlierMultiplier || 0),
     brand: brandOfCandidate(candidate),
-    labelSource: labels.source
+    labelSource: labels.source,
+    baselineMethod: candidate.creator?.baselineMethod
   };
 }
 
@@ -257,9 +259,8 @@ function median(values: number[]): number {
 }
 
 /**
- * Display form of a multiplier. The radar's creator medians are rough (YouTube compares an old
- * viral video with today's uploads, Instagram estimates the median from followers), so values in
- * the thousands are real arithmetic but meaningless - anything past 100x reads as "100x+".
+ * Display form of a multiplier. Past 100x the exact number stops meaning anything (and outliers
+ * scored before per-video baselines existed reach the thousands), so it reads as "100x+".
  */
 export function formatMultiplier(n: number): string {
   return n >= 100 ? '100x+' : `${round1(n)}x`;

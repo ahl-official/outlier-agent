@@ -53,6 +53,28 @@ import {
   ALCHEMANE_CATEGORY_GROUPS 
 } from '@/keywords';
 
+/** Where the creator baseline (the "normal views" the multiplier divides by) came from. */
+function baselineShortLabel(creator: OutlierCandidate['creator']): string {
+  const n = creator.sampleVideoCount;
+  switch (creator.baselineMethod) {
+    case 'nearby-uploads': return `${n} nearby uploads`;
+    case 'oldest-available': return `${n} oldest reachable uploads`;
+    case 'recent-reels': return `${n} recent reels`;
+    case 'estimated': return 'estimated';
+    default: return 'old estimate - rescan';
+  }
+}
+
+function baselineExplanation(creator: OutlierCandidate['creator']): string {
+  switch (creator.baselineMethod) {
+    case 'nearby-uploads': return "Median views of the channel's uploads published closest to this video, same type (Shorts vs long videos)";
+    case 'oldest-available': return "This video is older than the uploads we page back to, so the channel's oldest reachable uploads stand in - treat the multiplier as approximate";
+    case 'recent-reels': return "Median views of the creator's latest reels";
+    case 'estimated': return 'No real view counts were available, so the baseline is a guess (15% of followers, or a channel average) - the multiplier is unreliable';
+    default: return 'Scored before real baselines existed - the multiplier is unreliable until this keyword is scanned again';
+  }
+}
+
 function WhatsAppIcon({ size = 16, color = '#25D366', style }: { size?: number; color?: string; style?: React.CSSProperties }) {
   return (
     <svg
@@ -1763,8 +1785,12 @@ export default function HomePage() {
                           );
                         })()}
                       </div>
-                      <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
-                        Channel Median: ~{c.creator.medianViews >= 100000 ? `${(c.creator.medianViews / 100000).toFixed(1)}L` : c.creator.medianViews?.toLocaleString()}
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }} title={baselineExplanation(c.creator)}>
+                        Creator Baseline: ~{c.creator.medianViews >= 100000 ? `${(c.creator.medianViews / 100000).toFixed(1)}L` : c.creator.medianViews?.toLocaleString()}
+                        {' · '}
+                        <span style={{ color: c.creator.baselineMethod === 'estimated' || !c.creator.baselineMethod ? 'var(--rose-500)' : 'var(--text-dim)' }}>
+                          {baselineShortLabel(c.creator)}
+                        </span>
                       </span>
                     </div>
 

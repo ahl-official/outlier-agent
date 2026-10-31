@@ -1,4 +1,4 @@
-import { OutlierCandidate } from '../types';
+import { OutlierCandidate, BaselineMethod } from '../types';
 import { calculateOutlierScore, deriveSOPTaxonomy } from '../scoring/outlier';
 import { isCoreHairContent } from '../keywords';
 
@@ -11,7 +11,37 @@ interface InstagramProfileCacheEntry {
   followersCount: number;
   fullName?: string;
   avatarUrl?: string;
+  /** the creator's latest reels with real view counts, from the profile scrape's latestPosts */
+  recentReels: { shortCode: string; views: number }[];
   timestamp: number;
+}
+
+const REEL_BASELINE_MIN_SAMPLE = 3;
+
+/**
+ * The creator's normal views: the median of their latest reels (other than this one), straight
+ * from the profile scrape we already pay for. Falls back to the old guess - 15% of followers -
+ * only when the profile has too few reels, and says so via `method`.
+ */
+function instagramBaseline(
+  profile: InstagramProfileCacheEntry | undefined,
+  shortCode: string,
+  followerCount: number,
+  playCount: number
+): { medianViews: number; sampleSize?: number; method: BaselineMethod } {
+  const views = (profile?.recentReels || [])
+    .filter((r) => r.shortCode !== shortCode && r.views > 0)
+    .map((r) => r.views)
+    .sort((a, b) => a - b);
+  if (views.length >= REEL_BASELINE_MIN_SAMPLE) {
+    const mid = Math.floor(views.length / 2);
+    const median = views.length % 2 ? views[mid] : Math.round((views[mid - 1] + views[mid]) / 2);
+    return { medianViews: Math.max(median, 100), sampleSize: views.length, method: 'recent-reels' };
+  }
+  const estimate = followerCount > 0
+    ? Math.max(1000, Math.round(followerCount * 0.15))
+    : Math.max(1000, Math.round(playCount * 0.2));
+  return { medianViews: estimate, method: 'estimated' };
 }
 
 const instagramProfileCache = new Map<string, InstagramProfileCacheEntry>();
@@ -89,6 +119,10 @@ export async function getInstagramCreatorProfilesBatch(
                 followersCount: item.followersCount || 0,
                 fullName: item.fullName,
                 avatarUrl: item.profilePicUrlHD || item.profilePicUrl,
+                // Prefer plays (what the search results report) so both sides of the ratio match
+                recentReels: (Array.isArray(item.latestPosts) ? item.latestPosts : [])
+                  .filter((p: any) => p.type === 'Video' || p.productType === 'clips')
+                  .map((p: any) => ({ shortCode: p.shortCode || '', views: p.videoPlayCount || p.videoViewCount || 0 })),
                 timestamp: Date.now()
               };
               instagramProfileCache.set(u, entry);
@@ -268,11 +302,8 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
         }
       }
 
-      // In Instagram popular search, reels appear because they popped off.
-      // Approximate creator median views: estimate from follower count or play count baseline
-      const estimatedMedian = followerCount > 0
-        ? Math.max(1000, Math.round(followerCount * 0.15))
-        : Math.max(1000, Math.round(playCount * 0.18));
+      const baseline = instagramBaseline(profile, code, followerCount, playCount);
+      const baselineMedian = baseline.medianViews;
 
       const viewToFollowerRatio = followerCount > 0
         ? Math.round((playCount / followerCount) * 10) / 10
@@ -286,7 +317,7 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
 
       const score = calculateOutlierScore({
         viewCount: playCount,
-        medianViews: estimatedMedian,
+        medianViews: baselineMedian,
         publishedAt: item.timestamp || new Date().toISOString(),
         likeCount: likesCount,
         commentCount: commentsCount,
@@ -321,11 +352,13 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
           username: item.ownerUsername || 'creator',
           displayName: profile?.fullName || item.ownerFullName || item.ownerUsername || 'Instagram Creator',
           avatarUrl: profile?.avatarUrl,
-          medianViews: estimatedMedian,
+          medianViews: baselineMedian,
+          sampleVideoCount: baseline.sampleSize,
+          baselineMethod: baseline.method,
           subscriberOrFollowerCount: followerCount > 0 ? followerCount : undefined,
           profileUrl: item.ownerUsername ? `https://www.instagram.com/${item.ownerUsername}/` : undefined
         },
-        outlierMultiplier: Math.round((playCount / Math.max(estimatedMedian, 100)) * 10) / 10,
+        outlierMultiplier: Math.round((playCount / Math.max(baselineMedian, 100)) * 10) / 10,
         viewToFollowerRatio,
         outlierScore: score.totalScore,
         matchedKeyword: options.keyword,
@@ -335,7 +368,7 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
         sopTaxonomy: deriveSOPTaxonomy({
           title: extractFirstLineHook(caption) || `Reel by @${item.ownerUsername || 'creator'}`,
           caption,
-          multiplier: Math.round((playCount / Math.max(estimatedMedian, 100)) * 10) / 10,
+          multiplier: Math.round((playCount / Math.max(baselineMedian, 100)) * 10) / 10,
           formatType: detectReelFormat(caption),
           likeCount: likesCount,
           commentCount: commentsCount,
@@ -410,9 +443,8 @@ export async function getInstagramReelByUrl(rawUrl: string): Promise<OutlierCand
   const profile = item.ownerUsername ? profilesMap.get(item.ownerUsername.toLowerCase()) : undefined;
   const followerCount = profile?.followersCount ?? 0;
 
-  const estimatedMedian = followerCount > 0
-    ? Math.max(1000, Math.round(followerCount * 0.15))
-    : Math.max(1000, Math.round(playCount * 0.2));
+  const baseline = instagramBaseline(profile, code, followerCount, playCount);
+  const baselineMedian = baseline.medianViews;
 
   const viewToFollowerRatio = followerCount > 0
     ? Math.round((playCount / followerCount) * 10) / 10
@@ -420,7 +452,7 @@ export async function getInstagramReelByUrl(rawUrl: string): Promise<OutlierCand
 
   const score = calculateOutlierScore({
     viewCount: playCount,
-    medianViews: estimatedMedian,
+    medianViews: baselineMedian,
     publishedAt: item.timestamp || new Date().toISOString(),
     likeCount: item.likesCount || 0,
     commentCount: item.commentsCount || 0,
@@ -448,11 +480,13 @@ export async function getInstagramReelByUrl(rawUrl: string): Promise<OutlierCand
       username: item.ownerUsername || 'creator',
       displayName: profile?.fullName || item.ownerFullName || item.ownerUsername || 'Creator',
       avatarUrl: profile?.avatarUrl,
-      medianViews: estimatedMedian,
+      medianViews: baselineMedian,
+      sampleVideoCount: baseline.sampleSize,
+      baselineMethod: baseline.method,
       subscriberOrFollowerCount: followerCount > 0 ? followerCount : undefined,
       profileUrl: item.ownerUsername ? `https://www.instagram.com/${item.ownerUsername}/` : undefined
     },
-    outlierMultiplier: Math.round((playCount / estimatedMedian) * 10) / 10,
+    outlierMultiplier: Math.round((playCount / baselineMedian) * 10) / 10,
     viewToFollowerRatio,
     outlierScore: score.totalScore,
     matchedKeyword: 'direct-url',
@@ -462,7 +496,7 @@ export async function getInstagramReelByUrl(rawUrl: string): Promise<OutlierCand
     sopTaxonomy: deriveSOPTaxonomy({
       title: extractFirstLineHook(caption) || `Reel by @${item.ownerUsername || 'creator'}`,
       caption,
-      multiplier: Math.round((playCount / estimatedMedian) * 10) / 10,
+      multiplier: Math.round((playCount / baselineMedian) * 10) / 10,
       formatType: detectReelFormat(caption),
       likeCount: item.likesCount || 0,
       commentCount: item.commentsCount || 0,
