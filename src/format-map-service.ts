@@ -26,6 +26,19 @@ export interface TagRunResult {
   stoppedReason: 'done' | 'limit' | 'time' | 'quota' | 'storage';
 }
 
+// Before this, YouTube videos could only be tagged from their thumbnail (Vercel can't download
+// them). Those get one more pass now that Gemini watches the YouTube link; a retag that still ends
+// up thumbnail-only is newer than this, so it isn't retried again.
+const YOUTUBE_LINK_TAGGING_SINCE = Date.parse('2026-10-31T14:55:00Z');
+
+export function needsVideoRetag({ candidate, labels }: PoolEntry): boolean {
+  return (
+    candidate.platform === 'youtube' &&
+    labels?.source === 'thumbnail' &&
+    Date.parse(labels.taggedAt) < YOUTUBE_LINK_TAGGING_SINCE
+  );
+}
+
 // Gemini's free tier allows ~15 requests/minute on flash-lite; stay under it.
 const GAP_BETWEEN_CALLS_MS = 4500;
 
@@ -40,7 +53,7 @@ export async function tagUntaggedOutliers(
   const start = Date.now();
   const pool = filterPool(await getFormatMapPool(), filters);
   const queue = pool
-    .filter((e) => !e.labels)
+    .filter((e) => !e.labels || needsVideoRetag(e))
     .sort((a, b) => (b.candidate.outlierMultiplier || 0) - (a.candidate.outlierMultiplier || 0));
 
   let tagged = 0;
@@ -52,8 +65,8 @@ export async function tagUntaggedOutliers(
       stoppedReason = 'limit';
       break;
     }
-    // a video call can take ~30s; don't start one we can't finish
-    if (Date.now() - start > options.budgetMs - 32000) {
+    // one video can take ~45s (video refused, then thumbnail); don't start one we can't finish
+    if (i > 0 && Date.now() - start > options.budgetMs - 47000) {
       stoppedReason = 'time';
       break;
     }

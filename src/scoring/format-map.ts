@@ -212,7 +212,7 @@ function choosePicks(cells: MapCell[], whiteSpace: WhiteSpace[], rows: AxisStat[
       kind: 'proven',
       format: cell.format,
       editingStyle: cell.editingStyle,
-      reason: `${cell.count} outliers already won with ${label(rows, cell.format)} shot as ${label(columns, cell.editingStyle)} - median ${cell.medianMultiplier}x their creator's normal views.`
+      reason: `${cell.count} outliers already won with ${label(rows, cell.format)} shot as ${label(columns, cell.editingStyle)} - median ${formatMultiplier(cell.medianMultiplier)} their creator's normal views.`
     });
   }
 
@@ -222,7 +222,7 @@ function choosePicks(cells: MapCell[], whiteSpace: WhiteSpace[], rows: AxisStat[
       kind: 'bet',
       format: bet.format,
       editingStyle: bet.editingStyle,
-      reason: `Nobody in the pool has made ${label(rows, bet.format)} as ${label(columns, bet.editingStyle)} yet, but each half wins on its own (format median ${bet.rowMedian}x, style median ${bet.colMedian}x).`
+      reason: `Nobody in the pool has made ${label(rows, bet.format)} as ${label(columns, bet.editingStyle)} yet, but each half wins on its own (format median ${formatMultiplier(bet.rowMedian)}, style median ${formatMultiplier(bet.colMedian)}).`
     });
   }
   return picks;
@@ -254,6 +254,15 @@ function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Display form of a multiplier. The radar's creator medians are rough (YouTube compares an old
+ * viral video with today's uploads, Instagram estimates the median from followers), so values in
+ * the thousands are real arithmetic but meaningless - anything past 100x reads as "100x+".
+ */
+export function formatMultiplier(n: number): string {
+  return n >= 100 ? '100x+' : `${round1(n)}x`;
 }
 
 function round1(n: number): number {

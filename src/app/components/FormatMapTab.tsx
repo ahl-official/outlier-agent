@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Grid3x3, RefreshCw, Sparkles, ExternalLink, Info, Target, FlaskConical } from 'lucide-react';
-import type { FormatMapResult, MapCell, AxisStat } from '@/scoring/format-map';
+import { formatMultiplier, type FormatMapResult, type MapCell, type AxisStat } from '@/scoring/format-map';
 import { isIncompatible } from '@/scoring/format-taxonomy';
 
 type BrandFilter = 'AHL' | 'Alchemane' | 'all';
@@ -19,6 +19,7 @@ export default function FormatMapTab({ currentBrand }: Props) {
   const [platform, setPlatform] = useState<PlatformFilter>('all');
   const [minMultiplier, setMinMultiplier] = useState(3);
   const [map, setMap] = useState<FormatMapResult | null>(null);
+  const [retagCount, setRetagCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ format: string; editingStyle: string } | null>(null);
@@ -39,6 +40,7 @@ export default function FormatMapTab({ currentBrand }: Props) {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Failed to load the Format Map');
       setMap(data.map);
+      setRetagCount(data.retagCount || 0);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -110,7 +112,7 @@ export default function FormatMapTab({ currentBrand }: Props) {
     if (!map || map.taggedCount === 0) return null;
     const top = [...map.cells].sort((a, b) => b.heat - a.heat)[0];
     const ws = map.whiteSpace[0];
-    let text = `Most winning comes from ${labelOf(map.rows, top.format)} shot as ${labelOf(map.columns, top.editingStyle)} (${top.count} outliers, median ${top.medianMultiplier}x).`;
+    let text = `Most winning comes from ${labelOf(map.rows, top.format)} shot as ${labelOf(map.columns, top.editingStyle)} (${top.count} outliers, median ${formatMultiplier(top.medianMultiplier)}).`;
     if (ws) text += ` The biggest empty square: ${labelOf(map.rows, ws.format)} as ${labelOf(map.columns, ws.editingStyle)} - nobody has made it yet.`;
     return text;
   }, [map]);
@@ -167,9 +169,10 @@ export default function FormatMapTab({ currentBrand }: Props) {
           {map.untaggedCount > 0 && <span className="fm-warn"><b>{map.untaggedCount}</b> not tagged yet</span>}
           {map.thumbnailOnlyCount > 0 && <span title="The video couldn't be downloaded, so these were judged from the thumbnail and caption">{map.thumbnailOnlyCount} judged from thumbnail only</span>}
           <span title="A row or column needs this many outliers before it counts as proven">proven = {map.provenThreshold}+ outliers</span>
-          {map.untaggedCount > 0 && !tagging && (
+          {map.untaggedCount + retagCount > 0 && !tagging && (
             <button className="btn btn-primary btn-sm" onClick={runTagging} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Sparkles size={14} /> Tag {map.untaggedCount} with AI
+              <Sparkles size={14} /> Tag {map.untaggedCount + retagCount} with AI
+              {retagCount > 0 && <span style={{ fontWeight: 500 }}>({retagCount} YouTube re-watch)</span>}
             </button>
           )}
           {tagging && (
@@ -193,6 +196,12 @@ export default function FormatMapTab({ currentBrand }: Props) {
       {map && map.taggedCount > 0 && (
         <>
           {lead && <p className="fm-lead">{lead}</p>}
+          {map.cells.some((c) => c.videos.some((v) => v.multiplier >= 100)) && (
+            <div className="fm-note">
+              Multipliers above 100x show as &quot;100x+&quot;. The radar&apos;s creator baselines are rough (YouTube compares an old viral video with the channel&apos;s
+              recent uploads, Instagram estimates the baseline from followers), so treat the exact number as &quot;huge&quot;, not as a measurement.
+            </div>
+          )}
           {map.taggedCount < 30 && (
             <div className="fm-note">
               Only {map.taggedCount} tagged outliers so far - read this as early signal, not proof. It firms up past ~50.
@@ -207,7 +216,7 @@ export default function FormatMapTab({ currentBrand }: Props) {
                   {map.columns.map((col) => (
                     <th key={col.key} className={`fm-col-head ${col.proven ? 'proven' : ''}`} title={col.what}>
                       <div>{col.label}</div>
-                      <div className="fm-axis-meta">{col.count} · {col.medianMultiplier}x</div>
+                      <div className="fm-axis-meta">{col.count} · {formatMultiplier(col.medianMultiplier)}</div>
                     </th>
                   ))}
                 </tr>
@@ -217,7 +226,7 @@ export default function FormatMapTab({ currentBrand }: Props) {
                   <tr key={row.key}>
                     <th className={`fm-row-head ${row.proven ? 'proven' : ''}`} title={row.what}>
                       <div>{row.label}</div>
-                      <div className="fm-axis-meta">{row.count} · {row.medianMultiplier}x</div>
+                      <div className="fm-axis-meta">{row.count} · {formatMultiplier(row.medianMultiplier)}</div>
                     </th>
                     {map.columns.map((col) => {
                       const key = `${row.key}|${col.key}`;
@@ -232,7 +241,7 @@ export default function FormatMapTab({ currentBrand }: Props) {
                           className={`fm-cell ${cell ? 'filled' : ''} ${isWhite ? 'white-space' : ''} ${impossible ? 'impossible' : ''} ${isSelected ? 'selected' : ''}`}
                           style={cell ? { background: `rgba(245, 158, 11, ${alpha.toFixed(2)})` } : undefined}
                           onClick={() => (cell || isWhite) && setSelected({ format: row.key, editingStyle: col.key })}
-                          title={cell ? `${cell.count} outliers, median ${cell.medianMultiplier}x` : isWhite ? 'Empty square - both halves are proven' : ''}
+                          title={cell ? `${cell.count} outliers, median ${formatMultiplier(cell.medianMultiplier)}` : isWhite ? 'Empty square - both halves are proven' : ''}
                         >
                           {cell && (
                             <>
@@ -240,7 +249,7 @@ export default function FormatMapTab({ currentBrand }: Props) {
                                 <img className="fm-cell-thumb" src={cell.videos[0].thumbnailUrl} alt="" referrerPolicy="no-referrer" loading="lazy" />
                               )}
                               <span className="fm-cell-count">{cell.count}</span>
-                              <span className="fm-cell-badge">{cell.medianMultiplier}x</span>
+                              <span className="fm-cell-badge">{formatMultiplier(cell.medianMultiplier)}</span>
                             </>
                           )}
                           {isWhite && <span className="fm-cell-empty-label">empty</span>}
@@ -277,7 +286,7 @@ export default function FormatMapTab({ currentBrand }: Props) {
                           @{v.creator} · {v.platform === 'instagram' ? 'IG' : 'YT'} · {v.views.toLocaleString('en-IN')} views
                         </div>
                         <div className="fm-video-meta">
-                          <b style={{ color: 'var(--gold-400)' }}>{v.multiplier}x</b> their normal
+                          <b style={{ color: 'var(--gold-400)' }}>{formatMultiplier(v.multiplier)}</b> their normal
                           {v.labelSource === 'thumbnail' && <span className="fm-tag-thumb"> · tagged from thumbnail</span>}
                         </div>
                       </div>

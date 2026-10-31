@@ -7,8 +7,9 @@ import { taxonomyPromptBlock, normalizeFormatKey, normalizeEditingStyleKey } fro
  * Editing Style for a candidate. Used to backfill outliers that never had a Deep Dive (the
  * Deep Dive's six-reasons call already returns the same two tags for free).
  *
- * Prefers the real video; falls back to thumbnail + caption, flagged `source: 'thumbnail'` so the
- * map can say how much of it was judged from a still.
+ * Prefers the real video (YouTube by link, Instagram by its CDN file); falls back to thumbnail +
+ * caption, flagged `source: 'thumbnail'` so the map can say how much of it was judged from a still.
+ * Worst case is a refused video then a thumbnail call: ~45s.
  */
 const TAGGER_SYSTEM_PROMPT = `You label short-form hair-system / hair-topper / wig videos for a content team.
 Watch the video (or look at the thumbnail and caption if that is all you have) and pick the single best FORMAT and EDITING STYLE.
@@ -26,23 +27,35 @@ export async function tagCandidateFormat(candidate: OutlierCandidate, apiKey?: s
   const key = (apiKey || process.env.GEMINI_API_KEY || '').trim();
   if (key.length < 10) throw new Error('GEMINI_API_KEY is not set');
 
-  const parts: any[] = [];
-  let source: FormatLabels['source'] = 'video';
-
-  const video = await downloadVideoForGemini(candidate.url, candidate.videoUrl).catch(() => null);
-  if (video) {
-    parts.push({ inlineData: { mimeType: video.mimeType, data: video.buffer.toString('base64') } });
-  } else {
-    const thumb = await fetchThumbnail(candidate.thumbnailUrl);
-    if (!thumb) return null; // nothing to look at - don't guess from the caption alone
-    parts.push({ inlineData: thumb });
-    source = 'thumbnail';
+  // 1. YouTube: Gemini watches public YouTube links itself - no download (which Vercel can't do anyway)
+  if (candidate.platform === 'youtube' && candidate.url) {
+    const labels = await askGemini(key, [{ fileData: { fileUri: candidate.url } }], candidate, 'video');
+    if (labels) return labels;
   }
-  parts.push({
-    text: `Platform: ${candidate.platform}\nTitle: "${candidate.title || ''}"\nCaption: "${(candidate.caption || '').slice(0, 1200)}"\n${
-      video ? 'The video file is attached.' : 'Only the thumbnail is attached - no video available.'
-    }`
-  });
+
+  // 2. A downloadable file (Instagram CDN mp4, or yt-dlp locally)
+  const video = candidate.platform === 'youtube' ? null : await downloadVideoForGemini(candidate.url, candidate.videoUrl).catch(() => null);
+  if (video) {
+    const labels = await askGemini(key, [{ inlineData: { mimeType: video.mimeType, data: video.buffer.toString('base64') } }], candidate, 'video');
+    if (labels) return labels;
+  }
+
+  // 3. Thumbnail + caption - flagged so the map can say how much was judged from a still
+  const thumb = await fetchThumbnail(candidate.thumbnailUrl);
+  if (!thumb) return null; // nothing to look at - don't guess from the caption alone
+  return askGemini(key, [{ inlineData: thumb }], candidate, 'thumbnail');
+}
+
+async function askGemini(key: string, media: any[], candidate: OutlierCandidate, source: FormatLabels['source']): Promise<FormatLabels | null> {
+  const isVideo = source === 'video';
+  const parts = [
+    ...media,
+    {
+      text: `Platform: ${candidate.platform}\nTitle: "${candidate.title || ''}"\nCaption: "${(candidate.caption || '').slice(0, 1200)}"\n${
+        isVideo ? 'The video is attached.' : 'Only the thumbnail is attached - no video available.'
+      }`
+    }
+  ];
 
   for (const model of MODELS_TO_TRY) {
     try {
@@ -54,7 +67,7 @@ export async function tagCandidateFormat(candidate: OutlierCandidate, apiKey?: s
           contents: [{ role: 'user', parts }],
           generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
         }),
-        signal: AbortSignal.timeout(video ? 30000 : 15000)
+        signal: AbortSignal.timeout(isVideo ? 30000 : 15000)
       });
 
       if (!res.ok) {
@@ -62,6 +75,8 @@ export async function tagCandidateFormat(candidate: OutlierCandidate, apiKey?: s
         console.warn(`[FormatTagger] ${model} returned ${res.status}: ${errData.error?.message || 'unknown error'}`);
         // 429 = the key's quota is spent for now; every later call would fail too
         if (res.status === 429) throw new TaggerQuotaError('Gemini quota exhausted');
+        // 400 = this media was refused (private/age-gated video, bad URL) - the next model won't take it either
+        if (res.status === 400) return null;
         continue;
       }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getFormatMapPool, tagUntaggedOutliers } from '@/format-map-service';
-import { buildFormatMap, FormatMapFilters } from '@/scoring/format-map';
+import { getFormatMapPool, tagUntaggedOutliers, needsVideoRetag } from '@/format-map-service';
+import { buildFormatMap, filterPool, FormatMapFilters } from '@/scoring/format-map';
 
 export const maxDuration = 60; // tagging downloads videos and calls Gemini one at a time
 export const dynamic = 'force-dynamic';
@@ -19,8 +19,11 @@ function readFilters(source: { get(name: string): string | null }): FormatMapFil
 export async function GET(req: NextRequest) {
   try {
     const filters = readFilters(new URL(req.url).searchParams);
-    const map = buildFormatMap(await getFormatMapPool(), filters);
-    return NextResponse.json({ success: true, filters, map }, { headers: { 'Cache-Control': 'no-store' } });
+    const pool = await getFormatMapPool();
+    const map = buildFormatMap(pool, filters);
+    // YouTube outliers tagged from a thumbnail before Gemini could watch YouTube links
+    const retagCount = filterPool(pool, filters).filter(needsVideoRetag).length;
+    return NextResponse.json({ success: true, filters, map, retagCount }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
