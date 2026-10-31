@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "radar": "tsx scripts/radar-run.ts",
-    "test-keys": "tsx scripts/test-keys.ts"
+    "test-keys": "tsx scripts/test-keys.ts",
+    "tag-formats": "tsx scripts/tag-formats.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

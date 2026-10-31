@@ -35,6 +35,18 @@ export interface SOPTaxonomy {
   };
 }
 
+/**
+ * AI-assigned Format x Editing Style tags (keys from scoring/format-taxonomy.ts), used by the Format Map.
+ * Kept in their own table, keyed by video URL, because radar scans rewrite cached candidates wholesale.
+ */
+export interface FormatLabels {
+  format: string;
+  editingStyle: string;
+  /** what the model actually saw - 'video' is the only fully trustworthy one */
+  source: 'video' | 'frames' | 'thumbnail';
+  taggedAt: string;
+}
+
 export interface OutlierCandidate {
   id: string;
   platform: Platform;
@@ -230,6 +242,9 @@ export interface SixReasonsAnalysis {
   }[];
   creativeAdaptation: string;
   closingLesson: string;
+  /** Format Map tags from the same call (keys from scoring/format-taxonomy.ts); absent if the model gave no valid key */
+  format?: string;
+  editingStyle?: string;
   /** false when the model only had static frames + caption (no real audio) to work with */
   analyzedWithAudio: boolean;
   modelUsed: string;

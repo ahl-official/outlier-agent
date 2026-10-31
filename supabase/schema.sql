@@ -79,3 +79,13 @@ create table if not exists review_links (
   created_at timestamptz not null default now(),
   decided_at timestamptz
 );
+
+-- 8. Format Map tags: one Format x Editing Style per video (keyed like video_registry: lower-cased URL).
+-- Separate from the candidate jsonb because radar scans rewrite cached candidates wholesale.
+create table if not exists format_labels (
+  id text primary key,
+  format text not null,
+  editing_style text not null,
+  source text not null, -- video | frames | thumbnail
+  tagged_at timestamptz not null default now()
+);

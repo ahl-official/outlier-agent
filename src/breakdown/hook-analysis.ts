@@ -1,5 +1,6 @@
 import { OutlierCandidate, ExtractedVideoFrame, SixReasonsAnalysis } from '../types';
 import { downloadVideoForGemini } from './ffmpeg';
+import { taxonomyPromptBlock, normalizeFormatKey, normalizeEditingStyleKey } from '../scoring/format-taxonomy';
 
 /**
  * System prompt condensed from the "Outlier Reel Analysis" spec: analyze the actual reel
@@ -32,8 +33,12 @@ Respond in strict JSON with this exact shape:
     // exactly 6 of these
   ],
   "creativeAdaptation": "concise, practical creative direction for how we could adapt the strongest learning into an original reel for this category - the principle, not a copy of the script",
-  "closingLesson": "one short paragraph: the single most valuable creative lesson and how it could inspire a new original idea"
-}`;
+  "closingLesson": "one short paragraph: the single most valuable creative lesson and how it could inspire a new original idea",
+  "format": "exactly one FORMAT key from the list below",
+  "editingStyle": "exactly one EDITING STYLE key from the list below"
+}
+
+${taxonomyPromptBlock()}`;
 
 /**
  * Generates the simple "6 reasons it worked" + first-6-seconds hook breakdown.
@@ -160,6 +165,8 @@ function parsedResponseToAnalysis(parsed: any, modelUsed: string, analyzedWithAu
     })),
     creativeAdaptation: parsed.creativeAdaptation || '',
     closingLesson: parsed.closingLesson || '',
+    format: normalizeFormatKey(parsed.format) ?? undefined,
+    editingStyle: normalizeEditingStyleKey(parsed.editingStyle) ?? undefined,
     analyzedWithAudio,
     modelUsed
   };

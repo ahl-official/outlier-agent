@@ -41,8 +41,10 @@ import {
   AlertTriangle,
   Settings,
   Edit3,
-  UserPlus
+  UserPlus,
+  Grid3x3
 } from 'lucide-react';
+import FormatMapTab from './components/FormatMapTab';
 import { OutlierCandidate, DetailedOutlierBreakdown, BoardItem, BoardStatus } from '@/types';
 import { 
   DEFAULT_RADAR_KEYWORDS, 
@@ -216,7 +218,7 @@ function normalizeUrlClient(url: string): string {
 }
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<'radar' | 'breakdown' | 'board' | 'tracker'>('radar');
+  const [activeTab, setActiveTab] = useState<'radar' | 'breakdown' | 'board' | 'formats' | 'tracker'>('radar');
 
   // Radar state
   const [keywordList, setKeywordList] = useState<string[]>(DEFAULT_RADAR_KEYWORDS);
@@ -1111,6 +1113,12 @@ export default function HomePage() {
             {boardItems.length > 0 && <span className="nav-badge">{boardItems.length}</span>}
           </button>
           <button
+            className={`nav-tab-btn ${activeTab === 'formats' ? 'active' : ''}`}
+            onClick={() => setActiveTab('formats')}
+          >
+            <Grid3x3 size={16} /> Format Map
+          </button>
+          <button
             className={`nav-tab-btn ${activeTab === 'tracker' ? 'active' : ''}`}
             onClick={() => {
               fetchTrackerData();
@@ -1132,6 +1140,8 @@ export default function HomePage() {
           </button>
         </nav>
       </header>
+
+      {activeTab === 'formats' && <FormatMapTab currentBrand={currentBrand} />}
 
       {/* ========================================================
           TAB 1: DISCOVERY RADAR

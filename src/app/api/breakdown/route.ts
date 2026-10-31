@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getYouTubeVideoByUrl } from '@/providers/youtube';
 import { getInstagramReelByUrl } from '@/providers/instagram';
 import { analyzeOutlierVideo } from '@/breakdown/analyze';
-import { getSavedRadarCache, getCachedVideo, saveVideoToRegistry } from '@/storage';
+import { getSavedRadarCache, getCachedVideo, saveVideoToRegistry, saveFormatLabels } from '@/storage';
 import { OutlierCandidate, DetailedOutlierBreakdown } from '@/types';
 
 export const maxDuration = 60; // 60s timeout for video frame extraction & AI analysis
@@ -72,6 +72,17 @@ export async function POST(req: NextRequest) {
     // 4. Generate dynamic breakdown with frame-by-frame and strategist analysis
     const effectiveApiKey = (aiApiKey && String(aiApiKey).trim()) || process.env.GEMINI_API_KEY;
     const analysis: DetailedOutlierBreakdown = await analyzeOutlierVideo(candidate, { aiApiKey: effectiveApiKey });
+
+    // The six-reasons call also tagged Format x Editing Style - keep them for the Format Map
+    const sixReasons = analysis.sixReasonsAnalysis;
+    if (sixReasons?.format && sixReasons.editingStyle) {
+      await saveFormatLabels(candidate, {
+        format: sixReasons.format,
+        editingStyle: sixReasons.editingStyle,
+        source: sixReasons.analyzedWithAudio ? 'video' : 'frames',
+        taggedAt: new Date().toISOString()
+      });
+    }
 
     // 5. Store in master registry so it never needs to be re-scraped
     await saveVideoToRegistry(candidate, analysis);

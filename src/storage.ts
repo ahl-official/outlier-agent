@@ -1,5 +1,5 @@
 import { getSupabase } from './lib/supabase';
-import { BoardItem, BoardStatus, OutlierCandidate, DetailedOutlierBreakdown, SixReasonsAnalysis } from './types';
+import { BoardItem, BoardStatus, OutlierCandidate, DetailedOutlierBreakdown, SixReasonsAnalysis, FormatLabels } from './types';
 
 // In-memory fallback so the app never hard-crashes if Supabase is briefly unreachable.
 // This is NOT the source of truth (Supabase is) - it only serves stale-but-usable data
@@ -292,6 +292,56 @@ export async function saveVideosToRegistry(entries: { candidate: OutlierCandidat
   } catch (err: any) {
     console.warn(`[Storage] saveVideosToRegistry failed: ${err.message}`);
   }
+}
+
+// ---------------------------------------------------------------------
+// 3b. FORMAT MAP TAGS (Format x Editing Style per video, keyed like the registry)
+// ---------------------------------------------------------------------
+export async function getAllFormatLabels(): Promise<Map<string, FormatLabels>> {
+  const result = new Map<string, FormatLabels>();
+  const supabase = getSupabase();
+  if (!supabase) return result;
+
+  try {
+    const { data, error } = await supabase.from('format_labels').select('*');
+    if (error) throw error;
+    for (const row of data || []) {
+      result.set(row.id, {
+        format: row.format,
+        editingStyle: row.editing_style,
+        source: row.source,
+        taggedAt: row.tagged_at
+      });
+    }
+  } catch (err: any) {
+    console.warn(`[Storage] getAllFormatLabels failed: ${err.message}`);
+  }
+  return result;
+}
+
+/** Returns false when the tags couldn't be stored (e.g. the format_labels table doesn't exist yet). */
+export async function saveFormatLabels(candidate: OutlierCandidate, labels: FormatLabels): Promise<boolean> {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+
+  try {
+    const { error } = await supabase.from('format_labels').upsert({
+      id: formatLabelKey(candidate),
+      format: labels.format,
+      editing_style: labels.editingStyle,
+      source: labels.source,
+      tagged_at: labels.taggedAt
+    });
+    if (error) throw error;
+    return true;
+  } catch (err: any) {
+    console.warn(`[Storage] saveFormatLabels failed: ${err.message}`);
+    return false;
+  }
+}
+
+export function formatLabelKey(candidate: OutlierCandidate): string {
+  return normalizeVideoKey(candidate.url || candidate.id);
 }
 
 // ---------------------------------------------------------------------
