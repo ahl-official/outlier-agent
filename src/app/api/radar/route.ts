@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
         queries.push(
           searchYouTubeOutliers({
             keyword: kw,
-            maxResults: 15,
+            maxResults: 25, // up from 15
             minViews,
             minSubscribers: minFollowers,
             minFollowerRatio
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
         queries.push(
           searchInstagramOutliers({
             keyword: kw,
-            searchLimit: 20,
+            searchLimit: 40, // fetch more raw results so filters have more to work with
             minViews,
             minFollowers,
             minFollowerRatio

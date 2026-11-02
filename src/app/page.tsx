@@ -258,6 +258,26 @@ export default function HomePage() {
   const [radarCandidates, setRadarCandidates] = useState<OutlierCandidate[]>([]);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanMessage, setScanMessage] = useState<string>('');
+  // ── Already-seen tracking ──────────────────────────────────────────
+  // Video URLs seen in ANY previous scan are stored in localStorage.
+  // currentScanUrls = URLs that came in from the CURRENT scan only.
+  const [seenUrls, setSeenUrls] = React.useState<Set<string>>(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('radar_seen_urls') : null;
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
+  const [currentScanUrls, setCurrentScanUrls] = React.useState<Set<string>>(new Set<string>());
+  const markCurrentBatchSeen = (candidates: OutlierCandidate[]) => {
+    const urls = candidates.map((c) => (c.url || c.id).toLowerCase().replace(/\/$/, ''));
+    setCurrentScanUrls(new Set(urls));
+    setSeenUrls((prev) => {
+      const next = new Set(Array.from(prev).concat(urls));
+      try { localStorage.setItem('radar_seen_urls', JSON.stringify(Array.from(next))); } catch { /**/ }
+      return next;
+    });
+  };
+  // ──────────────────────────────────────────────────────────────────
 
   // Real-time client-side filtered candidates based on active Reach Ratio & View thresholds
   const filteredCandidates = useMemo(() => {
@@ -890,6 +910,7 @@ export default function HomePage() {
       if (data.success) {
         const found = data.candidates || [];
         setRadarCandidates(found);
+        markCurrentBatchSeen(found);
         if (found.length > 0) {
           showToast(`Discovered ${found.length} ranked videos for "${kw}"! 🔥`);
         } else {
@@ -1685,8 +1706,11 @@ export default function HomePage() {
             </div>
           ) : (
             <div className="radar-grid">
-              {filteredCandidates.map((c) => (
-                <div key={c.id} className="video-card">
+              {filteredCandidates.map((c) => {
+                const normUrlCard = (c.url || c.id).toLowerCase().replace(/\/$/, '');
+                const isSeenCard = seenUrls.has(normUrlCard) && !currentScanUrls.has(normUrlCard);
+                return (
+                <div key={c.id} className={"video-card" + (isSeenCard ? ' card-seen-before' : '')}>
                   <div className="card-thumbnail-container">
                     {c.thumbnailUrl ? (
                       <img src={c.thumbnailUrl} alt={c.title} className="card-thumbnail" />
@@ -1722,6 +1746,22 @@ export default function HomePage() {
                       {c.durationSeconds ? (
                         <span className="duration-tag">{c.durationSeconds}s</span>
                       ) : null}
+                      {(() => {
+                        const normUrl = (c.url || c.id).toLowerCase().replace(/\/$/, '');
+                        const isNew = currentScanUrls.has(normUrl) && !seenUrls.has(normUrl);
+                        const wasSeen = seenUrls.has(normUrl) && !currentScanUrls.has(normUrl);
+                        if (isNew) return (
+                          <span style={{ padding: '2px 7px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 700, background: 'rgba(99,102,241,0.9)', color: '#fff', letterSpacing: '0.04em' }} title="First time seeing this video">
+                            ✨ NEW
+                          </span>
+                        );
+                        if (wasSeen) return (
+                          <span style={{ padding: '2px 7px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 600, background: 'rgba(100,116,139,0.75)', color: '#cbd5e1', letterSpacing: '0.04em' }} title="This video appeared in a previous scan">
+                            👁 Seen before
+                          </span>
+                        );
+                        return null;
+                      })()}
                     </div>
                   </div>
 
@@ -1893,7 +1933,8 @@ export default function HomePage() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </main>

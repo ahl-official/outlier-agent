@@ -384,6 +384,16 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
 }
 
+/* Seen-before cards: dimmed so genuinely new cards stand out */
+.video-card.card-seen-before {
+  opacity: 0.55;
+  border-color: rgba(100, 116, 139, 0.2);
+}
+.video-card.card-seen-before:hover {
+  opacity: 1;
+  border-color: var(--border-highlight);
+}
+
 .card-thumbnail-container {
   position: relative;
   width: 100%;
