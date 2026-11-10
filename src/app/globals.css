@@ -119,6 +119,20 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Scrollbar */
+.analysis-evidence { padding: 24px; border-color: rgba(6, 182, 212, 0.4); }
+.analysis-evidence-limited { border-color: var(--border-gold); }
+.analysis-evidence h3 { color: var(--cyan-400); font-size: 1.1rem; }
+.analysis-evidence-limited h3 { color: var(--gold-400); }
+.analysis-evidence p { color: var(--text-muted); line-height: 1.6; margin-top: 10px; }
+.analysis-evidence .btn { margin-top: 14px; }
+.analysis-evidence h4 { margin-top: 22px; font-size: 0.9rem; }
+.analysis-evidence-model { font-size: 0.8rem; }
+.analysis-evidence-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 14px; }
+.analysis-evidence-image { background: var(--bg-primary); color: var(--text-main); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); overflow: hidden; text-align: left; cursor: pointer; }
+.analysis-evidence-image:focus-visible { outline: 2px solid var(--cyan-400); outline-offset: 3px; }
+.analysis-evidence-image img { display: block; width: 100%; height: 130px; object-fit: cover; }
+.analysis-evidence-image span { display: block; padding: 10px; font-size: 0.78rem; line-height: 1.4; }
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

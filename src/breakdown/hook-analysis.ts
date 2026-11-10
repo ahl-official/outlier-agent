@@ -1,5 +1,7 @@
 import { OutlierCandidate, ExtractedVideoFrame, SixReasonsAnalysis } from '../types';
 import { downloadVideoForGemini } from './ffmpeg';
+import { actualVideoFrames } from './evidence';
+import { prepareGeminiVideo, type PreparedVideo, type VideoMedia } from './gemini-video';
 import { taxonomyPromptBlock, normalizeFormatKey, normalizeEditingStyleKey } from '../scoring/format-taxonomy';
 
 /**
@@ -13,6 +15,8 @@ export const SIX_REASONS_SYSTEM_PROMPT = `You are an experienced Social Media Ma
 Do not simply describe the video or list generic factors such as "good hook" or "engaging content." Analyze the actual creative execution, storytelling, communication style, audience psychology, and content structure.
 
 For each of the 6 reasons, explain in one natural paragraph: what the creator did, why that creative decision may work for the audience, and what we can learn or adapt for our own content (American Hairline for men's hair systems, or Alchemane for women's hair toppers/extensions/wigs).
+
+No retention, watch-time, completion-rate or algorithm analytics have been provided; never invent those metrics. A possible creative explanation is not a proven cause of virality. For still-frame inputs, timestamps identify only sampled instants; unobserved speech, text or transitions must be described as unknown.
 
 Base the analysis only on what is actually observable in the provided video/frames and caption. Do not invent dialogue, visuals, or audience reactions that are not actually present. Clearly distinguish between what is observed and what is a possible explanation for performance.
 
@@ -50,7 +54,8 @@ ${taxonomyPromptBlock()}`;
 export async function generateSixReasonsAnalysis(
   candidate: OutlierCandidate,
   framesSource: ExtractedVideoFrame[] | Promise<ExtractedVideoFrame[]>,
-  apiKey?: string
+  apiKey?: string,
+  videoSource?: Promise<VideoMedia | null>
 ): Promise<SixReasonsAnalysis | null> {
   const effectiveApiKey = apiKey || process.env.GEMINI_API_KEY;
   const hasGeminiKey = !!effectiveApiKey && effectiveApiKey.trim().length >= 10;
@@ -59,7 +64,9 @@ export async function generateSixReasonsAnalysis(
   // independent of FFmpeg's own frame-extraction pipeline, so when it succeeds (the common
   // Instagram case) this never needs to wait on frame extraction at all. `framesSource` is only
   // actually awaited below, in the no-video fallback branch.
-  const video = hasGeminiKey ? await downloadVideoForGemini(candidate.url, candidate.videoUrl).catch(() => null) : null;
+  const youtubeLink = hasGeminiKey && candidate.platform === 'youtube' ? candidate.url : null;
+  const video = hasGeminiKey && !youtubeLink ? await (videoSource || downloadVideoForGemini(candidate.url, candidate.videoUrl)).catch(() => null) : null;
+  const hasVideo = !!(video || youtubeLink);
 
   const userContext = `Reel URL: ${candidate.url}
 Platform: ${candidate.platform}
@@ -67,25 +74,31 @@ Caption: "${candidate.caption || ''}"
 Views: ${candidate.viewCount.toLocaleString()} | Creator median: ${candidate.creator.medianViews.toLocaleString()} (${candidate.outlierMultiplier}x outlier)
 Engagement: ${candidate.likeCount.toLocaleString()} likes, ${candidate.commentCount.toLocaleString()} comments
 Audio/music metadata: "${candidate.musicOrAudio || 'Unknown'}"
-${video ? 'The actual video file (with audio) is attached - watch and listen to it directly.' : 'No video/audio file is available - only the static frames below and the caption text. Do not invent spoken dialogue; say the audio hook cannot be determined if you cannot verify it from what is provided.'}`;
+${hasVideo ? 'The actual video is attached as a file or YouTube link - watch it directly. Describe audio only if it is audible.' : 'No video/audio file is available - only the static frames below and the caption text. Do not invent spoken dialogue; say the audio hook cannot be determined if you cannot verify it from what is provided.'}`;
 
   if (!hasGeminiKey) {
     return callOpenRouterFallback(userContext, framesSource);
   }
 
   const parts: any[] = [];
-  if (video) {
-    parts.push({
-      inlineData: {
-        mimeType: video.mimeType,
-        data: video.buffer.toString('base64')
-      }
-    });
+  let prepared: PreparedVideo | undefined;
+  if (youtubeLink) {
+    parts.push({ fileData: { fileUri: youtubeLink } });
+  } else if (video) {
+    try {
+      prepared = await prepareGeminiVideo(video, effectiveApiKey!.trim());
+      parts.push(prepared.part);
+    } catch (error: any) {
+      console.warn(`[SixReasons] ${error.message}`);
+      return callOpenRouterFallback(userContext, framesSource);
+    }
   } else {
-    const frames = await framesSource;
+    const frames = actualVideoFrames(await framesSource);
+    if (frames.length < 2) return null;
     for (const frame of frames) {
       const base64Data = frame.dataUrl.replace(/^data:image\/[a-z]+;base64,/, '');
       if (base64Data && base64Data.length > 50) {
+        parts.push({ text: `Video sample ${frame.index} at ${frame.timestamp}` });
         parts.push({ inlineData: { mimeType: 'image/jpeg', data: base64Data } });
       }
     }
@@ -109,7 +122,7 @@ ${video ? 'The actual video file (with audio) is attached - watch and listen to 
           contents: [{ role: 'user', parts }],
           generationConfig: { temperature: 0.6, responseMimeType: 'application/json' }
         }),
-        signal: AbortSignal.timeout(video ? 30000 : 15000)
+        signal: AbortSignal.timeout(hasVideo ? 30000 : 12000)
       });
 
       if (!res.ok) {
@@ -132,17 +145,19 @@ ${video ? 'The actual video file (with audio) is attached - watch and listen to 
       }
 
       const parsed = JSON.parse(rawText);
-      if (!Array.isArray(parsed.sixReasons) || parsed.sixReasons.length === 0) {
+      if (!isValidAnalysis(parsed)) {
         console.warn(`[SixReasons] ${model} returned invalid sixReasons shape`);
         continue;
       }
 
-      return parsedResponseToAnalysis(parsed, `Gemini (${model})${video ? ' + video/audio' : ' + frames/caption only'}`, !!video);
+      await prepared?.cleanup();
+      return parsedResponseToAnalysis(parsed, `Gemini (${model})${hasVideo ? ' + video' : ' + sampled frames only'}`, hasVideo);
     } catch (err: any) {
       console.warn(`[SixReasons] ${model} threw: ${err.message}`);
     }
   }
   console.warn('[SixReasons] All Gemini models failed or returned nothing usable - trying OpenRouter fallback.');
+  await prepared?.cleanup();
 
   // Last resort: OpenRouter (e.g. GPT-4o mini) when Gemini is exhausted/down (most commonly the
   // free tier's 20 requests/day cap). OpenRouter's chat completions API doesn't accept raw
@@ -151,13 +166,21 @@ ${video ? 'The actual video file (with audio) is attached - watch and listen to 
   return callOpenRouterFallback(userContext, framesSource);
 }
 
+function isValidAnalysis(parsed: any): boolean {
+  return typeof parsed?.reelCategory === 'string' &&
+    typeof parsed.creativeAdaptation === 'string' && typeof parsed.closingLesson === 'string' &&
+    ['textHook', 'visualHook', 'audioHook'].every(key => typeof parsed.firstSixSeconds?.[key] === 'string') &&
+    Array.isArray(parsed.sixReasons) && parsed.sixReasons.length === 6 &&
+    parsed.sixReasons.every((reason: any) => typeof reason?.heading === 'string' && reason.heading.trim() && typeof reason?.paragraph === 'string' && reason.paragraph.trim());
+}
+
 function parsedResponseToAnalysis(parsed: any, modelUsed: string, analyzedWithAudio: boolean): SixReasonsAnalysis {
   return {
     reelCategory: parsed.reelCategory || 'Hair System Reel',
     firstSixSeconds: {
       textHook: parsed.firstSixSeconds?.textHook || 'Not determinable from available data',
       visualHook: parsed.firstSixSeconds?.visualHook || 'Not determinable from available data',
-      audioHook: parsed.firstSixSeconds?.audioHook || 'Not determinable from available data'
+      audioHook: analyzedWithAudio ? parsed.firstSixSeconds.audioHook : 'Audio was not available; the audio hook could not be verified.'
     },
     sixReasons: parsed.sixReasons.slice(0, 6).map((r: any) => ({
       heading: r.heading || 'Reason',
@@ -180,7 +203,8 @@ async function callOpenRouterFallback(
   if (!apiKey || apiKey.trim().length < 10) return null;
 
   const model = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
-  const frames = await framesSource;
+  const frames = actualVideoFrames(await framesSource);
+  if (frames.length < 2) return null;
 
   const content: any[] = [
     {
@@ -230,7 +254,7 @@ async function callOpenRouterFallback(
     }
 
     const parsed = JSON.parse(rawText);
-    if (!Array.isArray(parsed.sixReasons) || parsed.sixReasons.length === 0) {
+    if (!isValidAnalysis(parsed)) {
       console.warn('[SixReasons] OpenRouter returned invalid sixReasons shape');
       return null;
     }

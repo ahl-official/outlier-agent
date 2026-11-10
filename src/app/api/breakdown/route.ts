@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getYouTubeVideoByUrl } from '@/providers/youtube';
 import { getInstagramReelByUrl } from '@/providers/instagram';
 import { analyzeOutlierVideo } from '@/breakdown/analyze';
+import { canReuseAnalysis } from '@/breakdown/evidence';
 import { getSavedRadarCache, getCachedVideo, saveVideoToRegistry, saveFormatLabels } from '@/storage';
 import { OutlierCandidate, DetailedOutlierBreakdown } from '@/types';
 
-export const maxDuration = 60; // 60s timeout for video frame extraction & AI analysis
+export const maxDuration = 300; // Large videos need download, file processing and AI time (Vercel Fluid Compute).
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
@@ -19,10 +20,7 @@ export async function POST(req: NextRequest) {
       const cachedEntry = await getCachedVideo(targetKey, 72); // 72-hour TTL
       if (
         cachedEntry &&
-        cachedEntry.breakdown &&
-        cachedEntry.breakdown.deepVisualAnalysis &&
-        cachedEntry.breakdown.aiAgentAudit?.extractedFrames &&
-        cachedEntry.breakdown.aiAgentAudit.extractedFrames.length >= 4
+        canReuseAnalysis(cachedEntry.breakdown)
       ) {
         return NextResponse.json({
           success: true,

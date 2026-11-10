@@ -34,7 +34,7 @@ export async function tagCandidateFormat(candidate: OutlierCandidate, apiKey?: s
   }
 
   // 2. A downloadable file (Instagram CDN mp4, or yt-dlp locally)
-  const video = candidate.platform === 'youtube' ? null : await downloadVideoForGemini(candidate.url, candidate.videoUrl).catch(() => null);
+  const video = candidate.platform === 'youtube' ? null : await downloadVideoForGemini(candidate.url, candidate.videoUrl, 18 * 1024 * 1024, 20000).catch(() => null);
   if (video) {
     const labels = await askGemini(key, [{ inlineData: { mimeType: video.mimeType, data: video.buffer.toString('base64') } }], candidate, 'video');
     if (labels) return labels;

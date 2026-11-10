@@ -45,6 +45,7 @@ import {
   Grid3x3
 } from 'lucide-react';
 import FormatMapTab from './components/FormatMapTab';
+import AnalysisEvidence from './components/AnalysisEvidence';
 import { OutlierCandidate, DetailedOutlierBreakdown, BoardItem, BoardStatus } from '@/types';
 import { 
   DEFAULT_RADAR_KEYWORDS, 
@@ -311,7 +312,6 @@ export default function HomePage() {
   const [aiApiKey, setAiApiKey] = useState<string>('');
   const [showAiKeyInput, setShowAiKeyInput] = useState<boolean>(false);
   const [selectedFramePreview, setSelectedFramePreview] = useState<{ dataUrl: string; label?: string; visualTrigger?: string; timestamp?: string } | null>(null);
-  const [showSystemPrompt, setShowSystemPrompt] = useState<boolean>(false);
 
   // Brand context state: AHL vs Alchemane
   const [currentBrand, setCurrentBrand] = useState<'AHL' | 'Alchemane'>('AHL');
@@ -971,7 +971,7 @@ export default function HomePage() {
         if (data.candidate) {
           setCurrentCandidate(data.candidate);
         }
-        showToast('Deep Frame-by-Frame & Strategist Intelligence Loaded!');
+        showToast(data.analysis.aiAgentAudit?.status === 'unavailable' ? 'Video analysis unavailable — see the evidence notice.' : 'Analysis loaded — see the video evidence status.');
       } else {
         const message = data.error || 'Could not analyze video. Please try again.';
         setBreakdownError(message);
@@ -2052,7 +2052,7 @@ export default function HomePage() {
               <h2>Analyzing your video…</h2>
               <p className="deep-dive-loading-target">{analyzingVideo}</p>
               <p>Preparing the video breakdown. Your new analysis will appear here when it’s ready.</p>
-              <p className="deep-dive-loading-hint">This may take a minute. Please keep this page open.</p>
+              <p className="deep-dive-loading-hint">Larger videos can take a few minutes. Please keep this page open.</p>
               <div className="deep-dive-loading-skeleton" aria-hidden="true">
                 <span />
                 <span />
@@ -2064,7 +2064,7 @@ export default function HomePage() {
               <BarChart3 size={48} color="var(--gold-400)" style={{ margin: '0 auto 16px auto', display: 'block' }} />
               <h3 style={{ fontSize: '1.35rem', marginBottom: '8px', fontWeight: 800 }}>Paste Video URL or Select Any Outlier</h3>
               <p style={{ color: 'var(--text-muted)', maxWidth: '580px', margin: '0 auto 24px auto', fontSize: '0.92rem', lineHeight: 1.55 }}>
-                Analyzes the entire video frame-by-frame and second-by-second before making decisions. Pinpoints the exact visual hook, audio sync moments, psychological viral triggers, and generates an executive Social Media Director Remake Playbook.
+                Analyzes the video when it is accessible, or clearly labeled video samples when available. If only a cover image can be retrieved, the desk will say that video analysis is unavailable.
               </p>
 
               <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -2251,6 +2251,12 @@ export default function HomePage() {
                 </div>
               </div>
 
+              <AnalysisEvidence
+                analysis={currentBreakdown}
+                onPreview={setSelectedFramePreview}
+                onRetry={() => handleAnalyzeUrl(currentBreakdown.candidateUrl, currentCandidate || undefined)}
+              />
+
               {/* Simple 6-Reasons Analysis + First 6 Seconds Hook Breakdown */}
               {currentBreakdown.sixReasonsAnalysis && (
                 <div className="glass-panel" style={{ padding: '24px', border: '1px solid rgba(245, 158, 11, 0.4)', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.05), rgba(0, 0, 0, 0.4))' }}>
@@ -2258,7 +2264,7 @@ export default function HomePage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <CheckCircle size={18} color="var(--gold-400)" />
                       <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        6 Reasons It Worked — {currentBreakdown.sixReasonsAnalysis.reelCategory}
+                        6 Creative Findings — {currentBreakdown.sixReasonsAnalysis.reelCategory}
                       </span>
                     </div>
                     <span style={{
@@ -2270,7 +2276,7 @@ export default function HomePage() {
                       borderRadius: '9999px',
                       fontWeight: 700
                     }}>
-                      {currentBreakdown.sixReasonsAnalysis.analyzedWithAudio ? '🔊 Watched with audio' : '🖼️ Frames + caption only'}
+                      {currentBreakdown.sixReasonsAnalysis.analyzedWithAudio ? 'Video supplied to AI' : 'Sampled frames only — no audio'}
                     </span>
                   </div>
 
@@ -2489,290 +2495,6 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
-
-              {/* FFmpeg Sequential Frame Stream & AI Social Media Expert Agent */}
-              {currentBreakdown.strategistVerdict && (
-                <div className="glass-panel" style={{ padding: '24px', border: '1px solid rgba(6, 182, 212, 0.4)', background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(0, 0, 0, 0.4))' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Video size={18} color="var(--cyan-400)" />
-                      <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        FFmpeg Frame Stream & AI Social Media Expert
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.74rem', background: 'rgba(6, 182, 212, 0.15)', color: 'var(--cyan-400)', border: '1px solid rgba(6, 182, 212, 0.4)', padding: '3px 10px', borderRadius: '9999px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: (currentBreakdown.aiAgentAudit?.extractedFrames?.length || 0) > 1 ? 'var(--cyan-400)' : 'var(--gold-400)', display: 'inline-block' }} />
-                        🎬 {(currentBreakdown.aiAgentAudit?.extractedFrames?.length || 0) > 1 
-                          ? `${currentBreakdown.aiAgentAudit?.extractedFrames?.length} Frames (FFmpeg)` 
-                          : '1 Cover Frame (Direct Stream Restricted)'}
-                      </span>
-                      <span style={{ fontSize: '0.74rem', background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)', padding: '3px 10px', borderRadius: '9999px', fontWeight: 700 }}>
-                        🤖 {currentBreakdown.aiAgentAudit?.agentModel || 'Gemini Social Media Director'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowSystemPrompt(!showSystemPrompt)}
-                        style={{
-                          fontSize: '0.74rem',
-                          background: showSystemPrompt ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                          color: '#fff',
-                          border: '1px solid var(--border-subtle)',
-                          padding: '3px 10px',
-                          borderRadius: '9999px',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <FileText size={12} /> {showSystemPrompt ? 'Hide System Prompt' : 'View System Prompt'}
-                      </button>
-                      <span style={{ fontSize: '0.78rem', background: 'rgba(245, 158, 11, 0.15)', color: 'var(--gold-400)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '3px 10px', borderRadius: '9999px', fontWeight: 700 }}>
-                        Viral Score: {currentBreakdown.strategistVerdict.viralScoreOut100}/100
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Collapsible System Prompt Inspector */}
-                  {showSystemPrompt && (
-                    <div style={{ background: 'rgba(0, 0, 0, 0.6)', border: '1px solid rgba(6, 182, 212, 0.3)', borderRadius: 'var(--radius-sm)', padding: '14px', marginBottom: '20px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--cyan-400)', textTransform: 'uppercase' }}>
-                          📜 AI Agent Active System Prompt (Social Media Director)
-                        </span>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>Strict Multimodal Frame Directive</span>
-                      </div>
-                      <pre style={{ fontSize: '0.78rem', color: '#cbd5e1', whiteSpace: 'pre-wrap', fontFamily: 'monospace', lineHeight: 1.5, margin: 0 }}>
-                        {currentBreakdown.aiAgentAudit?.systemPrompt || `You are a world-class Short-Form Social Media Expert, Creative Director, and Viral Growth Strategist.
-You analyze video frames extracted via FFmpeg along with retention metrics to reverse-engineer viral outlier performance.
-Your mission:
-Carefully inspect all frames extracted through FFmpeg from this short-form video.
-1. The Winning Element: A single, sharp statement identifying the visual hook, camera angle, or high-contrast mechanism seen in these frames that stopped the viewer from scrolling.
-2. The One Thing That Makes This An Outlier: In EXACTLY 2 to 3 concise, punchy sentences, define the single deciding factor that made this video an outlier compared to ordinary content on the platform.`}
-                      </pre>
-                    </div>
-                  )}
-
-                  {/* FFmpeg Extracted Keyframes Reel */}
-                  {currentBreakdown.aiAgentAudit?.extractedFrames && currentBreakdown.aiAgentAudit.extractedFrames.length > 0 && (
-                    <div style={{ marginBottom: '22px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                        <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Layers size={14} color="var(--cyan-400)" />
-                          {currentBreakdown.aiAgentAudit.extractedFrames.length > 1
-                            ? `Sequential FFmpeg Extracted Frames (${currentBreakdown.aiAgentAudit.extractedFrames.length} Analyzed)`
-                            : `Platform Cover Poster Frame (Direct video stream restricted by platform)`}
-                        </span>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-                          Click any frame to inspect high-res trigger
-                        </span>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px' }}>
-                        {currentBreakdown.aiAgentAudit.extractedFrames.map((frame, idx) => (
-                          <div
-                            key={idx}
-                            onClick={() => setSelectedFramePreview(frame)}
-                            style={{
-                              background: 'rgba(0, 0, 0, 0.45)',
-                              border: '1px solid rgba(255, 255, 255, 0.08)',
-                              borderRadius: 'var(--radius-sm)',
-                              overflow: 'hidden',
-                              cursor: 'pointer',
-                              transition: 'transform 0.15s ease, border-color 0.15s ease'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.transform = 'translateY(-2px)';
-                              e.currentTarget.style.borderColor = 'var(--cyan-400)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.transform = 'translateY(0)';
-                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-                            }}
-                          >
-                            <div style={{ position: 'relative', width: '100%', height: '110px', background: '#0a0a0a' }}>
-                              <img
-                                src={frame.dataUrl}
-                                alt={`FFmpeg Frame ${frame.index}`}
-                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                              />
-                              <div style={{ position: 'absolute', top: '4px', left: '4px', background: 'rgba(0,0,0,0.75)', color: '#fff', fontSize: '0.68rem', fontWeight: 700, padding: '2px 5px', borderRadius: '3px' }}>
-                                {frame.timestamp}
-                              </div>
-                              {frame.retentionScore && (
-                                <div style={{ position: 'absolute', bottom: '4px', right: '4px', background: 'rgba(16, 185, 129, 0.85)', color: '#fff', fontSize: '0.64rem', fontWeight: 800, padding: '1px 5px', borderRadius: '3px' }}>
-                                  {frame.retentionScore}%
-                                </div>
-                              )}
-                            </div>
-                            <div style={{ padding: '6px 8px' }}>
-                              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {frame.label || `Frame ${frame.index}`}
-                              </div>
-                              <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginTop: '2px', lineHeight: 1.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                                {frame.visualTrigger || 'Key visual trigger'}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Core Deliverable 1: The Winning Element */}
-                  <div style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(0, 0, 0, 0.4))', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: 'var(--radius-sm)', padding: '16px 18px', marginBottom: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                      <Flame size={16} color="var(--gold-400)" />
-                      <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--gold-400)', letterSpacing: '0.05em' }}>
-                        🎯 The Winning Element (Identified from FFmpeg Frames)
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '1.02rem', fontWeight: 700, color: '#fff', lineHeight: 1.45 }}>
-                      {currentBreakdown.aiAgentAudit?.winningElement || currentBreakdown.strategistVerdict.theUnfairAdvantage}
-                    </div>
-                  </div>
-
-                  {/* Core Deliverable 2: The One Thing That Makes This Video An Outlier (2-3 Sentences) */}
-                  <div style={{ background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(147, 51, 234, 0.1))', border: '1px solid rgba(6, 182, 212, 0.4)', borderRadius: 'var(--radius-sm)', padding: '18px 20px', marginBottom: '18px', position: 'relative' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                      <Sparkles size={16} color="var(--cyan-400)" />
-                      <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--cyan-400)', letterSpacing: '0.05em' }}>
-                        ⚡ The One Thing That Makes This An Outlier (Social Media Expert Verdict — 2-3 Sentences)
-                      </span>
-                    </div>
-                    <p style={{ fontSize: '0.98rem', color: '#f8fafc', lineHeight: 1.65, fontWeight: 500, margin: 0, fontStyle: 'italic' }}>
-                      "{currentBreakdown.aiAgentAudit?.theOneOutlierThing || currentBreakdown.strategistVerdict.executiveVerdict}"
-                    </p>
-                  </div>
-
-                  {/* Supporting Strategic Advantage Cards */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
-                    <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--cyan-400)' }}>
-                      <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--cyan-400)' }}>
-                        ⚡ The Unfair Advantage (Secret Sauce)
-                      </span>
-                      <p style={{ fontSize: '0.86rem', color: '#e2e8f0', marginTop: '6px', lineHeight: 1.5 }}>
-                        {currentBreakdown.strategistVerdict.theUnfairAdvantage}
-                      </p>
-                    </div>
-
-                    <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--purple-400)' }}>
-                      <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--purple-400)' }}>
-                        🧠 Viewer Psychological Trigger
-                      </span>
-                      <p style={{ fontSize: '0.86rem', color: '#e2e8f0', marginTop: '6px', lineHeight: 1.5 }}>
-                        {currentBreakdown.strategistVerdict.psychologicalTrigger}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Second-by-Second Frame Timeline & Audio Analysis */}
-              {currentBreakdown.deepVisualAnalysis && (
-                <div className="glass-panel" style={{ padding: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Layers size={18} color="var(--gold-400)" />
-                      <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Second-By-Second Frame Analysis & Sound Design
-                      </span>
-                    </div>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
-                      Analyzed across key algorithmic watch-time phases
-                    </span>
-                  </div>
-
-                  {/* Visual Hook & Audio Strategy Grid */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px', marginBottom: '22px' }}>
-                    {/* Visual Hook Box */}
-                    <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                      <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--gold-400)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Eye size={15} /> Primary Visual Hook (Where & How Used)
-                      </div>
-                      <div style={{ marginBottom: '8px' }}>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>What Is Shown On Screen:</span>
-                        <div style={{ fontSize: '0.86rem', color: '#f1f5f9', fontWeight: 600, marginTop: '2px' }}>
-                          {currentBreakdown.deepVisualAnalysis.winningVisualHook.whatIsShown}
-                        </div>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
-                        <div>
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Camera Framing:</span>
-                          <div style={{ fontSize: '0.82rem', color: '#cbd5e1', marginTop: '2px' }}>
-                            {currentBreakdown.deepVisualAnalysis.winningVisualHook.cameraAngleAndFraming}
-                          </div>
-                        </div>
-                        <div>
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Exact Timing:</span>
-                          <div style={{ fontSize: '0.82rem', color: 'var(--cyan-400)', fontWeight: 600, marginTop: '2px' }}>
-                            {currentBreakdown.deepVisualAnalysis.winningVisualHook.exactTiming}
-                          </div>
-                        </div>
-                      </div>
-                      <div>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Why It Stops The Thumb:</span>
-                        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          {currentBreakdown.deepVisualAnalysis.winningVisualHook.whyItStopsTheScroll}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Audio Strategy Box */}
-                    <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                      <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--purple-400)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Music size={15} /> Audio & Song Strategy
-                      </div>
-                      <div style={{ marginBottom: '8px' }}>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Track & Audio Type:</span>
-                        <div style={{ fontSize: '0.86rem', color: '#f1f5f9', fontWeight: 600, marginTop: '2px' }}>
-                          🎵 {currentBreakdown.deepVisualAnalysis.audioAndMusicStrategy.trackName} ({currentBreakdown.deepVisualAnalysis.audioAndMusicStrategy.audioType})
-                        </div>
-                      </div>
-                      <div style={{ marginBottom: '8px' }}>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Audio-Visual Sync Moment:</span>
-                        <div style={{ fontSize: '0.82rem', color: '#cbd5e1', marginTop: '2px' }}>
-                          {currentBreakdown.deepVisualAnalysis.audioAndMusicStrategy.syncMomentWithVisuals}
-                        </div>
-                      </div>
-                      <div>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Algorithmic Audio Impact:</span>
-                        <div style={{ fontSize: '0.82rem', color: 'var(--purple-300, #c084fc)', marginTop: '2px' }}>
-                          {currentBreakdown.deepVisualAnalysis.audioAndMusicStrategy.trendingStatus}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Frame Timeline Cards */}
-                  <div style={{ fontSize: '0.80rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '10px' }}>
-                    Frame Progression (Timeline):
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {currentBreakdown.deepVisualAnalysis.frameByFrameTimeline.map((seg, idx) => (
-                      <div key={idx} style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '14px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255, 255, 255, 0.05)', display: 'grid', gridTemplateColumns: '130px 180px 1fr', gap: '14px', alignItems: 'center' }}>
-                        <div>
-                          <span style={{ fontSize: '0.80rem', fontWeight: 800, color: 'var(--gold-400)', background: 'rgba(245, 158, 11, 0.1)', padding: '3px 8px', borderRadius: '4px' }}>
-                            ⏱ {seg.timestamp}
-                          </span>
-                        </div>
-                        <div>
-                          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fff' }}>
-                            {seg.phase}
-                          </span>
-                          <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
-                            {seg.cameraFraming}
-                          </div>
-                        </div>
-                        <div style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: 1.45 }}>
-                          <div><strong>Visual Action:</strong> {seg.visualAction}</div>
-                          <div style={{ color: 'var(--text-dim)', fontSize: '0.78rem', marginTop: '2px' }}><strong>Sound Design:</strong> {seg.soundSync}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* WhatsApp Forward to Sir Banner */}
               <div className="whatsapp-callout-panel">
@@ -3625,7 +3347,7 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
         </main>
       )}
 
-      {/* FFmpeg Frame Preview Modal */}
+      {/* Evidence image preview */}
       {selectedFramePreview && (
         <div
           style={{
@@ -3660,10 +3382,10 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Video size={18} color="var(--cyan-400)" />
                 <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#fff' }}>
-                  {selectedFramePreview.label || 'FFmpeg Extracted Keyframe'}
+                  {selectedFramePreview.label || 'Evidence image'}
                 </span>
                 <span style={{ fontSize: '0.74rem', background: 'rgba(6, 182, 212, 0.15)', color: 'var(--cyan-400)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
-                  {selectedFramePreview.timestamp || 'Keyframe'}
+                  {selectedFramePreview.timestamp || 'Cover preview'}
                 </span>
               </div>
               <button
@@ -3678,17 +3400,17 @@ Carefully inspect all frames extracted through FFmpeg from this short-form video
             <div style={{ position: 'relative', width: '100%', maxHeight: '420px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <img
                 src={selectedFramePreview.dataUrl}
-                alt="Enlarged FFmpeg Frame"
+                alt="Enlarged evidence image"
                 style={{ maxWidth: '100%', maxHeight: '420px', objectFit: 'contain' }}
               />
             </div>
 
             <div style={{ padding: '16px 20px', background: 'rgba(0, 0, 0, 0.3)' }}>
               <div style={{ fontSize: '0.76rem', textTransform: 'uppercase', color: 'var(--cyan-400)', fontWeight: 800, marginBottom: '4px' }}>
-                Frame Visual Trigger & Algorithmic Impact
+                Image source
               </div>
               <p style={{ fontSize: '0.88rem', color: '#e2e8f0', margin: 0, lineHeight: 1.5 }}>
-                {selectedFramePreview.visualTrigger || 'Keyframe extracted via FFmpeg for multimodal visual analysis.'}
+                {selectedFramePreview.visualTrigger || (selectedFramePreview.timestamp ? 'Image sampled from the video at the shown timestamp.' : 'Cover preview only. This image has no verified video timestamp.')}
               </p>
             </div>
           </div>

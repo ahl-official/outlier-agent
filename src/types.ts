@@ -98,7 +98,9 @@ export interface RealComment {
 
 export interface ExtractedVideoFrame {
   index: number;
+  /** Only video-frame has a measured timestamp; a thumbnail uses an empty string. */
   timestamp: string;
+  source?: 'video-frame' | 'thumbnail';
   dataUrl: string;
   label?: string;
   visualTrigger?: string;
@@ -106,7 +108,9 @@ export interface ExtractedVideoFrame {
 }
 
 export interface AIAgentAudit {
-  status: 'ai_analyzed' | 'heuristic_engine' | 'ffmpeg_multimodal_analyzed';
+  status: 'ai_analyzed' | 'heuristic_engine' | 'ffmpeg_multimodal_analyzed' | 'unavailable';
+  evidenceSource?: 'video' | 'frames' | 'thumbnail' | 'none';
+  limitation?: string;
   agentModel?: string;
   systemPrompt?: string;
   winningElement?: string;
@@ -117,13 +121,15 @@ export interface AIAgentAudit {
     frameIndex: number;
     timestamp: string;
     visualTrigger: string;
-    retentionScore: number;
+    retentionScore?: number;
   }[];
   rawInsights?: string;
   timestamp: string;
 }
 
 export interface DetailedOutlierBreakdown {
+  /** Invalidates reports containing synthetic frames and template observations. */
+  analysisVersion?: number;
   id: string;
   candidateId: string;
   candidateUrl: string;
