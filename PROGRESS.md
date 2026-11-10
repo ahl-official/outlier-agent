@@ -7,7 +7,8 @@ This is the ongoing project log. Update it for every project task. Entries disti
 - Request: commit and push the completed Deep Dive analysis fixes.
 - Scope: evidence-aware analysis, removal of synthetic frames/verdicts, large-video handling, regression tests, progress instructions, this running log and the detailed project review.
 - Validation: the previous implementation task passed 13 regression tests and the production build, and verified six distinct frames from the supplied Instagram video. Rechecked `git diff --check` before staging.
-- Commit/push status: preparing the commit on `main` for `origin/main`; actual results will be recorded after Git confirms them.
+- Commit: `3528b6d` — `fix(analysis): require real video evidence and remove synthetic frames` (17 files).
+- Push: succeeded to `origin/main`; Git confirmed `55ad3ca..3528b6d main -> main`. This follow-up documentation records that confirmed result.
 - Deployment: not verified; the older deployment-specific URL does not automatically become the current deployment.
 
 ## 2026-11-10 — Corrected repeated frames and unsupported analysis claims
