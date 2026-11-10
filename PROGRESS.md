@@ -7,7 +7,11 @@ This is the ongoing project log. Update it for every project task. Entries disti
 - Request: commit, push and deploy the tested Gemini-to-OpenRouter fallback repair.
 - Scope: fallback/video compression, packaged media tools, safe failure diagnostics, regression tests, environment example and progress documentation. Portfolio output/generator remain separate local work.
 - Validation carried forward: 20 breakdown tests, eight tracker tests, production build and diff checks passed; live OpenRouter video fallback succeeded with simulated Gemini quota rejection.
-- Commit/push/deployment: in progress; results will be recorded only after verification.
+- Commit/push: `88d88ee` (`fix(analysis): repair OpenRouter video fallback and media processing`) pushed successfully to `origin/main`.
+- Production deployment: Vercel built exact commit `88d88ee` on Linux and reported Ready. Deployment `dpl_CVFhrBCNGVDPDd7WJbs1SHpUiBhu`, URL `https://outlier-agent-15c2rrj4n-ai-americanhairs-projects.vercel.app`; stable production alias `https://outlier-agent-ai-americanhairs-projects.vercel.app`.
+- Production verification: stable homepage returned HTTP 200 and app content; tracker GET returned success. Build logs confirmed dependency installation, compilation, type checking, page generation, function packaging and deployment completion.
+- Verification limit: automatic approval review rejected a proposed forced production analysis using a deliberately invalid Gemini key, because it would overwrite a real persisted analysis. No such request ran. Used read-only production checks instead; the successful real-key OpenRouter video inference remains the prior local integration check, not a deployed inference claim.
+- This follow-up documentation records confirmed results. Existing portfolio artifacts remain excluded from the fix.
 
 ## 2026-11-10 — Repaired Gemini-to-OpenRouter video fallback
 
