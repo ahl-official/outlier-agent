@@ -304,6 +304,8 @@ export default function HomePage() {
   // Breakdown state
   const [breakdownUrl, setBreakdownUrl] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [analyzingVideo, setAnalyzingVideo] = useState<string>('');
+  const [breakdownError, setBreakdownError] = useState<string | null>(null);
   const [currentBreakdown, setCurrentBreakdown] = useState<DetailedOutlierBreakdown | null>(null);
   const [currentCandidate, setCurrentCandidate] = useState<OutlierCandidate | null>(null);
   const [aiApiKey, setAiApiKey] = useState<string>('');
@@ -933,22 +935,24 @@ export default function HomePage() {
   };
 
   const handleAnalyzeUrl = async (urlToAnalyze?: string, candidateToUse?: OutlierCandidate) => {
-    const targetUrl = urlToAnalyze || breakdownUrl;
+    if (isAnalyzing) return;
+    const targetUrl = urlToAnalyze || candidateToUse?.url || breakdownUrl;
     if (!targetUrl && !candidateToUse) {
       showToast('Please enter a URL or choose a candidate');
       return;
     }
 
     setIsAnalyzing(true);
+    setBreakdownUrl(targetUrl);
+    setAnalyzingVideo(candidateToUse?.title || targetUrl);
+    setBreakdownError(null);
+    setCurrentBreakdown(null);
+    setCurrentCandidate(candidateToUse || null);
+    setSelectedFramePreview(null);
     setActiveTab('breakdown');
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-    if (candidateToUse) {
-      setCurrentCandidate(candidateToUse);
-      setBreakdownUrl(candidateToUse.url);
-    }
-
     try {
       const res = await fetch('/api/breakdown', {
         method: 'POST',
@@ -969,10 +973,14 @@ export default function HomePage() {
         }
         showToast('Deep Frame-by-Frame & Strategist Intelligence Loaded!');
       } else {
-        showToast(data.error || 'Could not analyze video');
+        const message = data.error || 'Could not analyze video. Please try again.';
+        setBreakdownError(message);
+        showToast(message);
       }
     } catch (err: any) {
-      showToast(err.message || 'Error running breakdown');
+      const message = err.message || 'Could not analyze video. Please try again.';
+      setBreakdownError(message);
+      showToast(message);
     } finally {
       setIsAnalyzing(false);
     }
@@ -1944,7 +1952,7 @@ export default function HomePage() {
           TAB 2: OUTLIER DEEP DIVE & DETAILED BREAKDOWN
          ======================================================== */}
       {activeTab === 'breakdown' && (
-        <main>
+        <main aria-busy={isAnalyzing}>
           {/* URL Input Bar */}
           <div className="glass-panel" style={{ padding: '20px', marginBottom: '24px' }}>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -1954,6 +1962,7 @@ export default function HomePage() {
                   type="text"
                   placeholder="Paste any YouTube Short/Video or Instagram Reel URL to get exact outlier intelligence..."
                   value={breakdownUrl}
+                  disabled={isAnalyzing}
                   onChange={(e) => setBreakdownUrl(e.target.value)}
                   style={{
                     width: '100%',
@@ -1976,7 +1985,7 @@ export default function HomePage() {
               >
                 {isAnalyzing ? (
                   <>
-                    <RefreshCw size={16} className="spin" /> Frame-by-Frame Analysis...
+                    <RefreshCw size={16} className="spin" /> Analyzing video...
                   </>
                 ) : (
                   <>
@@ -2024,7 +2033,33 @@ export default function HomePage() {
             )}
           </div>
 
-          {!currentBreakdown ? (
+          {breakdownError && (
+            <div className="glass-panel deep-dive-error" role="alert">
+              <AlertCircle size={20} aria-hidden="true" />
+              <div>
+                <strong>Analysis could not be completed</strong>
+                <p>{breakdownError}</p>
+                <p>Click Get Deep Dive to try again.</p>
+              </div>
+            </div>
+          )}
+
+          {isAnalyzing ? (
+            <div className="glass-panel deep-dive-loading" role="status" aria-live="polite">
+              <div className="deep-dive-loading-icon" aria-hidden="true">
+                <RefreshCw size={36} className="spin" />
+              </div>
+              <h2>Analyzing your video…</h2>
+              <p className="deep-dive-loading-target">{analyzingVideo}</p>
+              <p>Preparing the video breakdown. Your new analysis will appear here when it’s ready.</p>
+              <p className="deep-dive-loading-hint">This may take a minute. Please keep this page open.</p>
+              <div className="deep-dive-loading-skeleton" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+            </div>
+          ) : !currentBreakdown ? (
             <div className="glass-panel" style={{ padding: '60px 20px', textAlign: 'center' }}>
               <BarChart3 size={48} color="var(--gold-400)" style={{ margin: '0 auto 16px auto', display: 'block' }} />
               <h3 style={{ fontSize: '1.35rem', marginBottom: '8px', fontWeight: 800 }}>Paste Video URL or Select Any Outlier</h3>

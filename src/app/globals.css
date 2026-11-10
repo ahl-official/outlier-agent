@@ -59,6 +59,65 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: -0.02em;
 }
 
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.deep-dive-loading {
+  padding: 48px 24px;
+  text-align: center;
+  border-color: var(--border-gold);
+}
+
+.deep-dive-loading-icon {
+  display: flex;
+  justify-content: center;
+  color: var(--gold-400);
+  margin-bottom: 20px;
+}
+
+.deep-dive-loading h2 { font-size: 1.4rem; margin-bottom: 12px; }
+.deep-dive-loading p { color: var(--text-muted); line-height: 1.6; }
+.deep-dive-loading .deep-dive-loading-target {
+  color: var(--text-main);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  max-width: 640px;
+  margin: 0 auto 12px;
+}
+.deep-dive-loading .deep-dive-loading-hint { font-size: 0.85rem; margin-top: 8px; }
+.deep-dive-loading-skeleton { max-width: 560px; margin: 28px auto 0; }
+.deep-dive-loading-skeleton span {
+  display: block;
+  height: 12px;
+  margin: 12px auto;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--bg-card-active), rgba(245, 158, 11, 0.18), var(--bg-card-active));
+  background-size: 200% 100%;
+  animation: deep-dive-shimmer 1.8s linear infinite;
+}
+.deep-dive-loading-skeleton span:nth-child(2) { width: 85%; }
+.deep-dive-loading-skeleton span:nth-child(3) { width: 65%; }
+@keyframes deep-dive-shimmer { to { background-position: -200% 0; } }
+.deep-dive-error {
+  display: flex;
+  gap: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  color: var(--rose-500);
+  border-color: var(--rose-500);
+}
+.deep-dive-error > svg { flex-shrink: 0; }
+.deep-dive-error p { color: var(--text-muted); margin-top: 6px; overflow-wrap: anywhere; }
+
+@media (prefers-reduced-motion: reduce) {
+  .spin, .deep-dive-loading-skeleton span { animation: none; }
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
