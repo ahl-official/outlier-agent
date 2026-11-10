@@ -2,6 +2,49 @@
 
 This is the ongoing project log. Update it for every project task. Entries distinguish completed implementation, verification, and pending work. Dates use the user's Asia/Calcutta timezone.
 
+## 2026-11-10 — Publish the repaired video fallback
+
+- Request: commit, push and deploy the tested Gemini-to-OpenRouter fallback repair.
+- Scope: fallback/video compression, packaged media tools, safe failure diagnostics, regression tests, environment example and progress documentation. Portfolio output/generator remain separate local work.
+- Validation carried forward: 20 breakdown tests, eight tracker tests, production build and diff checks passed; live OpenRouter video fallback succeeded with simulated Gemini quota rejection.
+- Commit/push/deployment: in progress; results will be recorded only after verification.
+
+## 2026-11-10 — Repaired Gemini-to-OpenRouter video fallback
+
+- Request: fix unavailable video analysis while preserving the existing OpenRouter fallback after Gemini quota/request failure.
+- Confirmed code defect: fallback accepted only two or more actual video frames, but the Vercel path lacked packaged FFmpeg/ffprobe. A downloaded video could therefore succeed with Gemini yet never reach OpenRouter after Gemini failed. GPT-4o mini is the image fallback, not a video-input model.
+- Added a separate OpenRouter video path using the same downloaded bytes (or an actual YouTube link), `video_url` inputs and `OPENROUTER_VIDEO_MODEL` (default `google/gemini-2.5-flash-lite`, verified in the current official model catalog). Requests use the existing OpenRouter key. Preserved `OPENROUTER_MODEL` for a final timestamped-image fallback and kept audio unverified for that path.
+- Actual integration uncovered another failure: the affected DO3nGtGkUT2 video downloaded successfully (16,916,803 bytes), but sending its original base64 payload returned OpenRouter HTTP 413. Added full-duration H.264/AAC compression above 8 MiB, with a bounded bitrate, size check and processing deadline. No clipping/truncation is used to fit the request. Failed compression can still fall back to actual samples.
+- Installed `ffmpeg-static` and `ffprobe-static`; use system tools locally and packaged binaries when PATH tools are unavailable. Added Next.js external-package/runtime tracing configuration for Linux Vercel binaries. Actual frame extraction now has a serverless-capable path rather than a synthetic cover timeline.
+- Gemini quota/auth failures switch providers promptly. OpenRouter auth, insufficient-credit and quota errors stop repeated requests with the same key. Missing-key, media HTTP/size/download, upload, malformed response and request timeout failures are saved as safe diagnostics in the report and shown under Analysis attempts and errors. Raw provider bodies, keys, signed URLs and base64 are excluded from diagnostics.
+- OpenRouter-only deployments also share a single video download with frame extraction. Increased the report deadline to 240 seconds within the existing 300-second route allowance.
+- Live verification: on the affected V Light video, with PATH cleared and a simulated Gemini 429, the actual configured OpenRouter key returned six reasons and the specific opening observation: hands holding an extension strand and scissors. Model: OpenRouter google/gemini-2.5-flash-lite + video. The initial 413 failed probe and the successful compressed retry are distinguished; Gemini's real quota was not intentionally consumed. No live Sheet/registry records were overwritten. Evidence saved locally in ignored `scratch/verified-openrouter-video.json`.
+- Validation: all 20 breakdown tests and eight tracker tests passed. Added a real packaged-binary regression with PATH empty: compression retained the complete four-second fixture and its audio stream, stayed below the request budget, and produced three distinct timestamped video samples. Final production build passed compilation, type checking, page generation and build tracing; `git diff --check` passed. The first sandbox build hit EPERM creating a Next.js directory; the verified build ran outside that filesystem sandbox. Linux-specific tracing is configured for Vercel; a Linux deployment has not yet been exercised.
+- Files: `src/breakdown/hook-analysis.ts`, `ffmpeg.ts`, `analyze.ts`, `src/types.ts`, `src/app/components/AnalysisEvidence.tsx`, Next configuration, package manifests, `.env.example`, `tests/breakdown.test.ts`, and this log.
+- Commit/push/deployment: local implementation only; no new commit/push requested. Existing saved Sheet cells remain historical snapshots; this repair takes effect for new analyses after deployment. Earlier portfolio artifacts remain separate local work.
+- Provider references checked: official OpenRouter video-input documentation and current `/api/v1/models` catalog.
+
+## 2026-11-10 — Investigated V Light analysis change after row 29
+
+- Request: compare V Light Extension columns M/O before and after row 29 and explain the Video analysis unavailable notice.
+- Read live `V Light Extension` (sheet ID 87205930), A1:R45, including values/formulas and cell notes. No cell notes were present in this inspected range; the reported unavailable notice is consistent with the application evidence panel.
+- Findings: all 28 entries in rows 2:29 use only three hook descriptions (17 crown-reveal, eight scalp/hairline and three macro-comb descriptions). Older O cells repeat template narratives, including unsupported 90%+ completion and algorithm claims. These older detailed entries are not verified video evidence.
+- Rows 30:45: 15 O cells contain the current metrics-only baseline explanation; O30 is blank. Nine M cells contain None or Opening text not verified. These are saved literal values, not broken formulas.
+- Read backend registry reports for five representative videos without running new AI analysis or modifying backend data. Row 29's legacy report lacks analysisVersion and frame-source provenance, despite its old ffmpeg_multimodal_analyzed label. Row 30 has a successful version-2 Gemini video analysis with six reasons but no extracted timeline frames. Rows 31, 44 and 45 have unavailable status, only a cover thumbnail, zero video samples and no six-reasons analysis. Candidate direct-video URLs exist, but that alone does not prove they were downloadable or accepted by the model.
+- Code trace: unavailable analyses deliberately retain numerical provider metrics and omit creative verdicts. Media download, Gemini upload/model errors, missing actual samples and the outer deadline can collapse into a generic unavailable status; exact historical provider failure cannot be recovered from the saved report alone. No production logs were available in this investigation.
+- Separate export issue: older saves selected the text headline for column M; the latest pushed handler prefers the visual hook and six-reasons paragraph, then falls back to metrics if unavailable. Existing sheet cells are snapshots and are not backfilled automatically, explaining why a successful stored report can coexist with incomplete exported cells such as O30.
+- No live sheet edits or application code changes in this investigation. Next work: capture specific media/provider failure diagnostics, verify one affected video's current download/model path, then regenerate and explicitly backfill evidence-backed M/O findings. Preserve the distinction between measured performance and creative hypotheses.
+- Validation: live bounded cell comparison, historical/current source inspection and read-only backend evidence checks. Progress log updated locally; no commit/push requested.
+
+## 2026-11-10 — Removed existing tracker duplicates and preserved prevention
+
+- Request: keep the existing duplicate-entry prevention unchanged and remove duplicate records from the connected sheet.
+- Inspected the tracker POST handler and `normalizeVideoUrl`: existing normalized platform/video identity checks still reject a previously logged video before inserting. No application code changed.
+- Live target: `Outliers Tracker` (sheet ID 0) in the configured backend workbook. Identified 21 extra records across three Instagram video IDs. All duplicate records had identical non-timestamp fields, Pending Review status, no feedback/notes/chips and no overflow data. Kept the first record of each video, preserving original attribution and timestamp.
+- Saved a pre-cleanup snapshot in ignored `scratch/tracker-before-dedup-2026-11-10.json`. Re-read live cells immediately before deletion and confirmed the snapshot still matched. Deleted original rows 29:41, 21:27 and 19 in one descending-index batch. Other tabs were untouched.
+- Verification: 38 records reduced to 17 unique videos with zero duplicates. Compared all retained cell values, notes, chips and validation against the original snapshot; they match exactly. Confirmed no additional Video URLs in F61:F1088. Native Sheets visual check confirmed yellow header, plain body rows and retained fixed widths; some existing long text remains clipped at those intentionally preserved widths.
+- Commit/push: this task changes the live sheet and this local progress log only; no new commit or push requested. Prior backend fix remains pushed as `ac47a15` with follow-up log commit `1e305c1`. Latest deployment verification remains outstanding.
+
 ## 2026-11-10 — Repaired Outliers Tracker saving and simplified the live sheet
 
 - Request: fix new outliers not saving in the backend-connected tracker tab; keep only the header yellow and all data/new rows unfilled.

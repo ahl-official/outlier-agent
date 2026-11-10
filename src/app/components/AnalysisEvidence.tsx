@@ -26,6 +26,14 @@ export default function AnalysisEvidence({ analysis, onPreview, onRetry }: Props
         ? 'This older report does not identify its image sources. Run analysis again to get a verified evidence status.'
         : audit?.limitation || 'The video could not be inspected. No visual or audio findings are available.'}</p>
       {analyzed && audit?.agentModel && <p className="analysis-evidence-model">{audit.agentModel}</p>}
+      {!!audit?.diagnostics?.length && (
+        <details>
+          <summary>Analysis attempts and errors</summary>
+          <ul>{audit.diagnostics.map((attempt, index) => (
+            <li key={index}>{attempt.message}{attempt.httpStatus ? ` (HTTP ${attempt.httpStatus})` : ''}</li>
+          ))}</ul>
+        </details>
+      )}
       {!analyzed && <button type="button" className="btn btn-outline btn-sm" onClick={onRetry}>Retry video analysis</button>}
       {images.length > 0 && (
         <>

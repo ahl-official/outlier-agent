@@ -1,4 +1,4 @@
-import { OutlierCandidate, DetailedOutlierBreakdown, RealComment, AIAgentAudit, SixReasonsAnalysis } from '../types';
+import { OutlierCandidate, DetailedOutlierBreakdown, RealComment, AIAgentAudit, SixReasonsAnalysis, AnalysisDiagnostic } from '../types';
 import { getYouTubeVideoComments, extractYouTubeVideoId, decodeHtmlEntities } from '../providers/youtube';
 import { downloadVideoForGemini, extractFramesWithFfmpeg } from './ffmpeg';
 import { unavailableAudit } from './social-agent';
@@ -20,14 +20,22 @@ export async function analyzeOutlierVideo(candidate: OutlierCandidate, options?:
   const videoId = candidate.platform === 'youtube' ? extractYouTubeVideoId(candidate.url) : null;
   const commentsPromise = videoId ? getYouTubeVideoComments(videoId, 10).catch(() => []) : Promise.resolve([] as RealComment[]);
   const key = options?.aiApiKey || process.env.GEMINI_API_KEY;
-  const videoPromise = candidate.platform === 'instagram' && key ? downloadVideoForGemini(candidate.url, candidate.videoUrl).catch(() => null) : undefined;
+  const diagnostics: AnalysisDiagnostic[] = [];
+  const videoPromise = candidate.platform === 'instagram' && (key || process.env.OPENROUTER_API_KEY)
+    ? downloadVideoForGemini(candidate.url, candidate.videoUrl, undefined, undefined, diagnostics).catch(() => null) : undefined;
   const framesPromise = extractFramesWithFfmpeg(candidate.url, candidate.thumbnailUrl, candidate.id, { maxFrames: 6, timeoutMs: 75000 }, candidate.videoUrl, candidate.mediaUrls, videoPromise).catch(() => []);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let sixReasons: SixReasonsAnalysis | null;
   try {
     sixReasons = await Promise.race([
-      generateSixReasonsAnalysis(candidate, framesPromise, key, videoPromise).catch(() => null),
-      new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), 180000); })
+      generateSixReasonsAnalysis(candidate, framesPromise, key, videoPromise, diagnostics).catch(() => {
+        diagnostics.push({ provider: 'analysis', code: 'request_failed', message: 'Analysis stopped unexpectedly before producing a report.' });
+        return null;
+      }),
+      new Promise<null>(resolve => { timer = setTimeout(() => {
+        diagnostics.push({ provider: 'analysis', code: 'timeout', message: 'The analysis time limit was reached.' });
+        resolve(null);
+      }, 240000); })
     ]);
   } finally { if (timer) clearTimeout(timer); }
   const [frames, realComments] = await Promise.all([framesPromise, commentsPromise]);
@@ -48,6 +56,7 @@ export async function analyzeOutlierVideo(candidate: OutlierCandidate, options?:
     rawInsights: sixReasons.closingLesson,
     timestamp: new Date().toISOString()
   } : unavailableAudit(frames, samples.length ? 'Video samples were extracted, but AI analysis did not complete. No creative verdict is available.' : 'The actual video could not be analyzed. A cover image cannot verify its scenes, timing or audio. Try again to request a new analysis.');
+  audit.diagnostics = [...diagnostics];
 
   return {
     analysisVersion: ANALYSIS_VERSION,

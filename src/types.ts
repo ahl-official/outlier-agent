@@ -107,10 +107,18 @@ export interface ExtractedVideoFrame {
   retentionScore?: number;
 }
 
+export interface AnalysisDiagnostic {
+  provider: 'gemini' | 'openrouter' | 'media' | 'analysis';
+  code: string;
+  message: string;
+  httpStatus?: number;
+}
+
 export interface AIAgentAudit {
   status: 'ai_analyzed' | 'heuristic_engine' | 'ffmpeg_multimodal_analyzed' | 'unavailable';
   evidenceSource?: 'video' | 'frames' | 'thumbnail' | 'none';
   limitation?: string;
+  diagnostics?: AnalysisDiagnostic[];
   agentModel?: string;
   systemPrompt?: string;
   winningElement?: string;

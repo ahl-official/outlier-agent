@@ -3,7 +3,7 @@ import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { ExtractedVideoFrame } from '../types';
+import { ExtractedVideoFrame, AnalysisDiagnostic } from '../types';
 import { extractYouTubeVideoId } from '../providers/youtube';
 import { uniqueFrames } from './evidence';
 import type { VideoMedia } from './gemini-video';
@@ -31,6 +31,44 @@ function isPlatformUrl(value: string): boolean {
   } catch { return false; }
 }
 
+/** System tools locally; packaged binaries in the serverless function. */
+async function mediaTool(cmd: 'ffmpeg' | 'ffprobe'): Promise<string | null> {
+  if (await isToolAvailable(cmd)) return cmd;
+  try {
+    const binary: string | null = cmd === 'ffmpeg' ? require('ffmpeg-static') : require('ffprobe-static').path;
+    return binary && fs.existsSync(binary) ? binary : null;
+  } catch { return null; }
+}
+
+/** Reduce the full video/audio payload; never truncate the clip to satisfy a size cap. */
+export async function prepareOpenRouterVideo(video: VideoMedia, diagnostics: AnalysisDiagnostic[] = []): Promise<VideoMedia | null> {
+  const limit = 8 * 1024 * 1024;
+  if (video.buffer.length <= limit) return video;
+  const [ffmpeg, ffprobe] = await Promise.all([mediaTool('ffmpeg'), mediaTool('ffprobe')]);
+  if (!ffmpeg || !ffprobe) {
+    diagnostics.push({ provider: 'media', code: 'compression_unavailable', message: 'The video needs compression, but the server media tools are unavailable. Trying sampled frames instead.' });
+    return null;
+  }
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'outlier-compress-'));
+  try {
+    const input = path.join(dir, 'input.mp4');
+    const output = path.join(dir, 'output.mp4');
+    await fs.promises.writeFile(input, video.buffer);
+    const probe = await execFileAsync(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', input], { timeout: 4000 });
+    const duration = Number(probe.stdout.trim());
+    if (!Number.isFinite(duration) || duration <= 0) throw new Error('Invalid duration');
+    const bitrate = Math.min(900000, Math.floor(7 * 1024 * 1024 * 8 / duration) - 48000);
+    if (bitrate < 64000) throw new Error('Video too long for the payload budget');
+    await execFileAsync(ffmpeg, ['-nostdin', '-i', input, '-map', '0:v:0', '-map', '0:a:0?', '-vf', 'scale=w=640:h=960:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=12', '-c:v', 'libx264', '-preset', 'ultrafast', '-threads', '2', '-b:v', String(bitrate), '-maxrate', String(bitrate), '-bufsize', String(bitrate * 2), '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '48k', '-movflags', '+faststart', '-y', output], { timeout: 25000 });
+    const size = (await fs.promises.stat(output)).size;
+    if (size <= 5000 || size > limit) throw new Error('Compressed video outside payload budget');
+    return { buffer: await fs.promises.readFile(output), mimeType: 'video/mp4' };
+  } catch {
+    diagnostics.push({ provider: 'media', code: 'compression_failed', message: 'The video could not be compressed within the size/time budget. Trying sampled frames instead.' });
+    return null;
+  } finally { await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {}); }
+}
+
 async function readBoundedResponse(res: Response, maxBytes: number): Promise<Buffer | null> {
   if (!res.ok || !res.body) return null;
   if (Number(res.headers.get('content-length')) > maxBytes) {
@@ -52,19 +90,29 @@ async function readBoundedResponse(res: Response, maxBytes: number): Promise<Buf
 }
 
 /** Downloads actual media. A poster image or an HTML response is never a video. */
-export async function downloadVideoForGemini(videoUrl: string, directVideoUrl?: string, maxBytes = VIDEO_MAX_BYTES, timeoutMs = 60000): Promise<VideoMedia | null> {
+export async function downloadVideoForGemini(videoUrl: string, directVideoUrl?: string, maxBytes = VIDEO_MAX_BYTES, timeoutMs = 60000, diagnostics: AnalysisDiagnostic[] = []): Promise<VideoMedia | null> {
   const source = directVideoUrl || (videoUrl.endsWith('.mp4') ? videoUrl : undefined);
   if (source?.startsWith('https://')) {
     try {
       const res = await fetch(source, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(timeoutMs) });
+      if (!res.ok) diagnostics.push({ provider: 'media', code: 'download_http_error', httpStatus: res.status, message: 'The video host rejected the download. Its media link may have expired or access may be restricted.' });
       const mimeType = (res.headers.get('content-type') || '').split(';')[0];
       if (mimeType.startsWith('video/')) {
         const buffer = await readBoundedResponse(res, maxBytes);
         if (buffer && buffer.length > 5000) return { buffer, mimeType };
-      } else { await res.body?.cancel(); }
-    } catch (err: any) { console.warn(`[Media] Video download failed: ${err.message}`); }
+        if (res.ok) diagnostics.push({ provider: 'media', code: 'invalid_video_size', message: 'The video was empty, incomplete or exceeded the download size limit.' });
+      } else {
+        await res.body?.cancel();
+        if (res.ok) diagnostics.push({ provider: 'media', code: 'not_video', message: 'The media link returned a page or image instead of a video file.' });
+      }
+    } catch (err: any) {
+      diagnostics.push({ provider: 'media', code: err?.name === 'TimeoutError' || err?.name === 'AbortError' ? 'download_timeout' : 'download_failed', message: 'The video download timed out or could not connect to the media host.' });
+    }
   }
-  if (!isPlatformUrl(videoUrl) || !(await isToolAvailable('yt-dlp'))) return null;
+  if (!isPlatformUrl(videoUrl) || !(await isToolAvailable('yt-dlp'))) {
+    diagnostics.push({ provider: 'media', code: 'download_unavailable', message: 'No accessible video file was found and the server has no platform downloader.' });
+    return null;
+  }
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'outlier-video-'));
   const file = path.join(dir, 'clip.mp4');
   try {
@@ -88,15 +136,15 @@ export async function extractFramesWithFfmpeg(
 ): Promise<ExtractedVideoFrame[]> {
   const deadline = Date.now() + (options?.timeoutMs || 35000);
   const maxFrames = Math.min(6, Math.max(1, options?.maxFrames || 6));
-  const [hasFfmpeg, hasProbe] = await Promise.all([isToolAvailable('ffmpeg'), isToolAvailable('ffprobe')]);
-  if (hasFfmpeg && hasProbe) {
+  const [ffmpeg, ffprobe] = await Promise.all([mediaTool('ffmpeg'), mediaTool('ffprobe')]);
+  if (ffmpeg && ffprobe) {
     const video = await (videoSource || downloadVideoForGemini(videoUrl, directVideoUrl));
     if (video && Date.now() < deadline) {
       const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'outlier-frames-'));
       const file = path.join(dir, 'clip.mp4');
       try {
         await fs.promises.writeFile(file, video.buffer);
-        const probe = await execFileAsync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file], { timeout: Math.max(1, Math.min(4000, deadline - Date.now())) });
+        const probe = await execFileAsync(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file], { timeout: Math.max(1, Math.min(4000, deadline - Date.now())) });
         const duration = Number(probe.stdout.trim());
         if (!Number.isFinite(duration) || duration <= 0) throw new Error('Could not measure video duration');
         const seconds = [0, Math.min(1.5, duration * .12), duration * .35, duration * .6, duration * .82, Math.max(0, duration - .4)].slice(0, maxFrames);
@@ -105,7 +153,7 @@ export async function extractFramesWithFfmpeg(
           if (Date.now() >= deadline) break;
           const out = path.join(dir, `frame-${frames.length}.jpg`);
           try {
-            await execFileAsync('ffmpeg', ['-nostdin', '-ss', sec.toFixed(2), '-i', file, '-frames:v', '1', '-vf', 'scale=480:-1', '-q:v', '3', '-y', out], { timeout: Math.max(1, Math.min(5000, deadline - Date.now())) });
+            await execFileAsync(ffmpeg, ['-nostdin', '-ss', sec.toFixed(2), '-i', file, '-frames:v', '1', '-vf', 'scale=480:-1', '-q:v', '3', '-y', out], { timeout: Math.max(1, Math.min(5000, deadline - Date.now())) });
             const buffer = await fs.promises.readFile(out);
             if (buffer.length < 500) continue;
             const timestamp = `${String(Math.floor(sec / 60)).padStart(2, '0')}:${(sec % 60).toFixed(2).padStart(5, '0')}`;
@@ -113,7 +161,7 @@ export async function extractFramesWithFfmpeg(
           } catch { /* Preserve other successfully sampled frames. */ }
         }
         if (frames.length) return uniqueFrames(frames);
-      } catch (err: any) { console.warn(`[Media] Frame extraction unavailable: ${err.message}`); }
+      } catch { console.warn('[Media] Frame extraction unavailable for this file.'); }
       finally { await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {}); }
     }
   }

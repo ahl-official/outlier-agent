@@ -1,5 +1,5 @@
-import { OutlierCandidate, ExtractedVideoFrame, SixReasonsAnalysis } from '../types';
-import { downloadVideoForGemini } from './ffmpeg';
+import { OutlierCandidate, ExtractedVideoFrame, SixReasonsAnalysis, AnalysisDiagnostic } from '../types';
+import { downloadVideoForGemini, prepareOpenRouterVideo } from './ffmpeg';
 import { actualVideoFrames } from './evidence';
 import { prepareGeminiVideo, type PreparedVideo, type VideoMedia } from './gemini-video';
 import { taxonomyPromptBlock, normalizeFormatKey, normalizeEditingStyleKey } from '../scoring/format-taxonomy';
@@ -47,25 +47,26 @@ ${taxonomyPromptBlock()}`;
 /**
  * Generates the simple "6 reasons it worked" + first-6-seconds hook breakdown.
  * Prefers feeding Gemini the actual video (with audio) so the audio hook is genuinely observed,
- * not inferred. Falls back to frames + caption only when no video file is available (e.g.
- * YouTube on a serverless deploy with no yt-dlp) - in that case the prompt itself instructs the
- * model not to invent dialogue, and the result is flagged `analyzedWithAudio: false`.
+ * not inferred. OpenRouter receives the actual video when Gemini fails, with a separate
+ * video-capable model. A final image-model fallback uses only genuine timestamped samples
+ * and is flagged `analyzedWithAudio: false`.
  */
 export async function generateSixReasonsAnalysis(
   candidate: OutlierCandidate,
   framesSource: ExtractedVideoFrame[] | Promise<ExtractedVideoFrame[]>,
   apiKey?: string,
-  videoSource?: Promise<VideoMedia | null>
+  videoSource?: Promise<VideoMedia | null>,
+  diagnostics: AnalysisDiagnostic[] = []
 ): Promise<SixReasonsAnalysis | null> {
   const effectiveApiKey = apiKey || process.env.GEMINI_API_KEY;
   const hasGeminiKey = !!effectiveApiKey && effectiveApiKey.trim().length >= 10;
 
-  // Runs concurrently with frame extraction (not after it) - the video download here is
-  // independent of FFmpeg's own frame-extraction pipeline, so when it succeeds (the common
-  // Instagram case) this never needs to wait on frame extraction at all. `framesSource` is only
-  // actually awaited below, in the no-video fallback branch.
-  const youtubeLink = hasGeminiKey && candidate.platform === 'youtube' ? candidate.url : null;
-  const video = hasGeminiKey && !youtubeLink ? await (videoSource || downloadVideoForGemini(candidate.url, candidate.videoUrl)).catch(() => null) : null;
+  // The caller shares a single download with the concurrent frame-extraction pipeline.
+  const youtubeLink = candidate.platform === 'youtube' ? candidate.url : null;
+  // Download once and share the same bytes with both providers. OpenRouter video input
+  // works even on serverless hosts without FFmpeg/ffprobe.
+  const video = !youtubeLink && (hasGeminiKey || process.env.OPENROUTER_API_KEY)
+    ? await (videoSource || downloadVideoForGemini(candidate.url, candidate.videoUrl)).catch(() => null) : null;
   const hasVideo = !!(video || youtubeLink);
 
   const userContext = `Reel URL: ${candidate.url}
@@ -74,10 +75,13 @@ Caption: "${candidate.caption || ''}"
 Views: ${candidate.viewCount.toLocaleString()} | Creator median: ${candidate.creator.medianViews.toLocaleString()} (${candidate.outlierMultiplier}x outlier)
 Engagement: ${candidate.likeCount.toLocaleString()} likes, ${candidate.commentCount.toLocaleString()} comments
 Audio/music metadata: "${candidate.musicOrAudio || 'Unknown'}"
-${hasVideo ? 'The actual video is attached as a file or YouTube link - watch it directly. Describe audio only if it is audible.' : 'No video/audio file is available - only the static frames below and the caption text. Do not invent spoken dialogue; say the audio hook cannot be determined if you cannot verify it from what is provided.'}`;
+Evidence instructions are supplied with the attached media. Music metadata alone does not verify audible sound.`;
+
+  const fallback = () => callOpenRouterFallback(userContext, framesSource, video, youtubeLink, diagnostics);
 
   if (!hasGeminiKey) {
-    return callOpenRouterFallback(userContext, framesSource);
+    recordDiagnostic(diagnostics, 'gemini', 'missing_key', 'Gemini API key is not configured.');
+    return fallback();
   }
 
   const parts: any[] = [];
@@ -89,12 +93,15 @@ ${hasVideo ? 'The actual video is attached as a file or YouTube link - watch it 
       prepared = await prepareGeminiVideo(video, effectiveApiKey!.trim());
       parts.push(prepared.part);
     } catch (error: any) {
-      console.warn(`[SixReasons] ${error.message}`);
-      return callOpenRouterFallback(userContext, framesSource);
+      recordDiagnostic(diagnostics, 'gemini', 'upload_failed', 'Gemini video upload or processing failed; trying OpenRouter.');
+      return fallback();
     }
   } else {
     const frames = actualVideoFrames(await framesSource);
-    if (frames.length < 2) return null;
+    if (frames.length < 2) {
+      recordDiagnostic(diagnostics, 'media', 'video_unavailable', 'The video could not be downloaded and fewer than two actual video samples are available.');
+      return fallback();
+    }
     for (const frame of frames) {
       const base64Data = frame.dataUrl.replace(/^data:image\/[a-z]+;base64,/, '');
       if (base64Data && base64Data.length > 50) {
@@ -103,7 +110,7 @@ ${hasVideo ? 'The actual video is attached as a file or YouTube link - watch it 
       }
     }
   }
-  parts.push({ text: userContext });
+  parts.push({ text: `${userContext}\n${hasVideo ? VIDEO_INSTRUCTIONS : FRAME_INSTRUCTIONS}` });
 
   // gemini-2.5-flash-lite tried first: confirmed fast and reliable for video+audio input in
   // testing. gemini-1.5-flash and gemini-2.0-flash are dropped - both confirmed 404
@@ -127,10 +134,9 @@ ${hasVideo ? 'The actual video is attached as a file or YouTube link - watch it 
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({} as any));
-        console.warn(`[SixReasons] ${model} returned ${res.status}: ${errData.error?.message || errData.error?.status || 'unknown error'}`);
-        // 429 on a free-tier key means the whole key is exhausted for the day, not just this
-        // model - trying the other 2 models would just burn time on guaranteed failures.
-        if (res.status === 429) break;
+        recordHttpFailure(diagnostics, 'gemini', res.status);
+        // Switch providers promptly on quota/auth errors. A 429 can be a rate or quota limit.
+        if ([429, 401, 403].includes(res.status)) break;
         if (res.status === 400 || res.status === 401 || res.status === 403) {
           if (errData.error?.status === 'INVALID_ARGUMENT') break;
         }
@@ -140,30 +146,44 @@ ${hasVideo ? 'The actual video is attached as a file or YouTube link - watch it 
       const data = await res.json();
       const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!rawText) {
-        console.warn(`[SixReasons] ${model} returned no text. finishReason: ${data.candidates?.[0]?.finishReason || 'unknown'}`);
+        recordDiagnostic(diagnostics, 'gemini', 'empty_response', 'Gemini returned no analysis text.');
         continue;
       }
 
       const parsed = JSON.parse(rawText);
       if (!isValidAnalysis(parsed)) {
-        console.warn(`[SixReasons] ${model} returned invalid sixReasons shape`);
+        recordDiagnostic(diagnostics, 'gemini', 'invalid_response', 'Gemini returned an incomplete analysis.');
         continue;
       }
 
       await prepared?.cleanup();
       return parsedResponseToAnalysis(parsed, `Gemini (${model})${hasVideo ? ' + video' : ' + sampled frames only'}`, hasVideo);
     } catch (err: any) {
-      console.warn(`[SixReasons] ${model} threw: ${err.message}`);
+      recordDiagnostic(diagnostics, 'gemini', err?.name === 'TimeoutError' || err?.name === 'AbortError' ? 'timeout' : 'request_failed', 'Gemini request timed out, failed or returned invalid JSON.');
     }
   }
   console.warn('[SixReasons] All Gemini models failed or returned nothing usable - trying OpenRouter fallback.');
   await prepared?.cleanup();
 
-  // Last resort: OpenRouter (e.g. GPT-4o mini) when Gemini is exhausted/down (most commonly the
-  // free tier's 20 requests/day cap). OpenRouter's chat completions API doesn't accept raw
-  // video+audio files like Gemini's native API does, so this is always frames+caption only -
-  // the prompt already instructs the model not to invent dialogue it can't verify.
-  return callOpenRouterFallback(userContext, framesSource);
+  return fallback();
+}
+
+const VIDEO_INSTRUCTIONS = 'The actual video is attached. Watch it directly. Describe audio only if it is audible; otherwise say it could not be verified.';
+const FRAME_INSTRUCTIONS = 'Only the timestamped video samples below are attached. No video/audio file is available on this path. Do not invent dialogue, sounds or actions between samples. Audio cannot be verified.';
+
+function recordDiagnostic(diagnostics: AnalysisDiagnostic[], provider: AnalysisDiagnostic['provider'], code: string, message: string, httpStatus?: number) {
+  diagnostics.push({ provider, code, message, ...(httpStatus ? { httpStatus } : {}) });
+  // Never log provider bodies, API keys, signed media URLs or base64 content.
+  console.warn(`[SixReasons] ${provider}: ${code}${httpStatus ? ` (${httpStatus})` : ''}`);
+}
+
+function recordHttpFailure(diagnostics: AnalysisDiagnostic[], provider: 'gemini' | 'openrouter', status: number) {
+  const name = provider === 'gemini' ? 'Gemini' : 'OpenRouter';
+  const [code, message] = status === 429 ? ['rate_limit', `${name} rate or quota limit reached.`]
+    : status === 402 ? ['credits_exhausted', `${name} credits or spending allowance are insufficient.`]
+    : status === 401 || status === 403 ? ['authentication', `${name} API key or permissions were rejected.`]
+    : ['http_error', `${name} could not process the analysis request.`];
+  recordDiagnostic(diagnostics, provider, code, message, status);
 }
 
 function isValidAnalysis(parsed: any): boolean {
@@ -197,28 +217,46 @@ function parsedResponseToAnalysis(parsed: any, modelUsed: string, analyzedWithAu
 
 async function callOpenRouterFallback(
   userContext: string,
-  framesSource: ExtractedVideoFrame[] | Promise<ExtractedVideoFrame[]>
+  framesSource: ExtractedVideoFrame[] | Promise<ExtractedVideoFrame[]>,
+  video: VideoMedia | null,
+  youtubeLink: string | null,
+  diagnostics: AnalysisDiagnostic[]
 ): Promise<SixReasonsAnalysis | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey || apiKey.trim().length < 10) return null;
-
-  const model = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
-  const frames = actualVideoFrames(await framesSource);
-  if (frames.length < 2) return null;
-
-  const content: any[] = [
-    {
-      type: 'text',
-      text: `${userContext}\n\nNo video/audio file is available via this path - only the static frames below and the caption text. Do not invent spoken dialogue; say the audio hook cannot be determined if you cannot verify it.`
-    }
-  ];
-  for (const frame of frames.slice(0, 6)) {
-    if (frame.dataUrl) {
-      content.push({ type: 'image_url', image_url: { url: frame.dataUrl } });
-    }
+  if (!apiKey || apiKey.trim().length < 10) {
+    recordDiagnostic(diagnostics, 'openrouter', 'missing_key', 'OpenRouter fallback API key is not configured.');
+    return null;
   }
-  if (content.length === 1) return null; // no frames and no video - nothing to analyze
 
+  // GPT-4o mini accepts images, not videos. Use a separate video-capable model;
+  // its OpenRouter requests use OpenRouter credentials/billing, not the direct Gemini key.
+  if (video || youtubeLink) {
+    const model = process.env.OPENROUTER_VIDEO_MODEL || 'google/gemini-2.5-flash-lite';
+    const prepared = video ? await prepareOpenRouterVideo(video, diagnostics) : null;
+    const mediaUrl = prepared ? `data:${prepared.mimeType};base64,${prepared.buffer.toString('base64')}` : youtubeLink;
+    const result = mediaUrl ? await requestOpenRouter([
+      { type: 'text', text: `${userContext}\n${VIDEO_INSTRUCTIONS}` },
+      { type: 'video_url', video_url: { url: mediaUrl } }
+    ], model, apiKey, true, diagnostics) : { analysis: null };
+    if (result.analysis) return result.analysis;
+    // Repeating an auth/credit/quota failure with the same key cannot help.
+    if (result.stop) return null;
+  }
+
+  const frames = actualVideoFrames(await framesSource);
+  if (frames.length < 2) {
+    recordDiagnostic(diagnostics, 'media', 'insufficient_samples', 'Frame fallback needs at least two distinct video samples. A cover image cannot substitute for video.');
+    return null;
+  }
+  const content: any[] = [{ type: 'text', text: `${userContext}\n${FRAME_INSTRUCTIONS}` }];
+  for (const frame of frames.slice(0, 6)) {
+    content.push({ type: 'text', text: `Video sample ${frame.index} at ${frame.timestamp}` });
+    content.push({ type: 'image_url', image_url: { url: frame.dataUrl } });
+  }
+  return (await requestOpenRouter(content, process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini', apiKey, false, diagnostics)).analysis;
+}
+
+async function requestOpenRouter(content: any[], model: string, apiKey: string, withVideo: boolean, diagnostics: AnalysisDiagnostic[]): Promise<{ analysis: SixReasonsAnalysis | null; stop?: boolean }> {
   try {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -237,31 +275,31 @@ async function callOpenRouterFallback(
         response_format: { type: 'json_object' },
         temperature: 0.6
       }),
-      signal: AbortSignal.timeout(25000)
+      signal: AbortSignal.timeout(withVideo ? 45000 : 25000)
     });
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      console.warn(`[SixReasons] OpenRouter (${model}) returned ${res.status}: ${errText.slice(0, 300)}`);
-      return null;
+      await res.body?.cancel();
+      recordHttpFailure(diagnostics, 'openrouter', res.status);
+      return { analysis: null, stop: [401, 402, 403, 429].includes(res.status) };
     }
 
     const data = await res.json();
     const rawText = data.choices?.[0]?.message?.content;
     if (!rawText) {
-      console.warn('[SixReasons] OpenRouter returned no content.');
-      return null;
+      recordDiagnostic(diagnostics, 'openrouter', 'empty_response', 'OpenRouter returned no analysis text.');
+      return { analysis: null };
     }
 
     const parsed = JSON.parse(rawText);
     if (!isValidAnalysis(parsed)) {
-      console.warn('[SixReasons] OpenRouter returned invalid sixReasons shape');
-      return null;
+      recordDiagnostic(diagnostics, 'openrouter', 'invalid_response', 'OpenRouter returned an incomplete analysis.');
+      return { analysis: null };
     }
 
-    return parsedResponseToAnalysis(parsed, `OpenRouter (${model})`, false);
+    return { analysis: parsedResponseToAnalysis(parsed, `OpenRouter (${model}) + ${withVideo ? 'video' : 'sampled frames only'}`, withVideo) };
   } catch (err: any) {
-    console.warn(`[SixReasons] OpenRouter fallback threw: ${err.message}`);
-    return null;
+    recordDiagnostic(diagnostics, 'openrouter', err?.name === 'TimeoutError' || err?.name === 'AbortError' ? 'timeout' : 'request_failed', 'OpenRouter request timed out, failed or returned invalid JSON.');
+    return { analysis: null };
   }
 }
