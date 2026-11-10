@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getReviewLink, decideReviewLink } from '@/storage';
 import { getGoogleSheetsClient } from '@/google-sheets';
 import { normalizeVideoUrl } from '@/lib/video-url';
+import { readTrackerSheet } from '@/tracker-sheet';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,11 +61,7 @@ async function markApprovalInSheet(videoUrl: string, decision: 'approved' | 'dis
   const sheets = getGoogleSheetsClient();
   if (!sheets) return false;
 
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: "'Outliers Tracker'!A2:R1000"
-  });
-  const rows = response.data.values || [];
+  const { rows } = await readTrackerSheet(sheets, SPREADSHEET_ID);
   const target = normalizeVideoUrl(videoUrl);
 
   const rowIdx = rows.findIndex((row: any[]) => normalizeVideoUrl((row[5] || '').trim()) === target);

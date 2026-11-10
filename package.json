@@ -10,7 +10,8 @@
     "radar": "tsx scripts/radar-run.ts",
     "test-keys": "tsx scripts/test-keys.ts",
     "tag-formats": "tsx scripts/tag-formats.ts",
-    "test:breakdown": "tsx --test tests/breakdown.test.ts"
+    "test:breakdown": "tsx --test tests/breakdown.test.ts",
+    "test:tracker": "tsx --test tests/tracker.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

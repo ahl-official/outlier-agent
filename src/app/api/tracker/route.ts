@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getGoogleSheetsClient } from '@/google-sheets';
 import { getTeamMembers } from '@/storage';
 import { normalizeVideoUrl } from '@/lib/video-url';
+import { readTrackerSheet, insertTrackerRecord } from '@/tracker-sheet';
+
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID || '0AIG06pZpg4KBUk9PVA';
 const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID || '14nj56PxfqLHcv8xTB03_RKSfyDD2s-C9Psk3LMnWGdU';
@@ -36,7 +40,8 @@ export async function GET() {
     const sheets = getGoogleSheetsClient();
     if (!sheets) {
       return NextResponse.json({
-        success: true,
+        success: false,
+        error: 'Google Sheets credentials are not configured on this server.',
         todayCount: 0,
         quotaTarget: 10,
         totalTeamTodayCount: 0,
@@ -46,17 +51,12 @@ export async function GET() {
         sheetUrl: SHEET_URL,
         folderUrl: FOLDER_URL,
         teamMembers: await getTeamMembers(),
-        warning: 'Google Sheets credentials not found. Tracker is running in local-only fallback mode.'
-      });
+        warning: 'Tracker data is unavailable until Google Sheets credentials are configured.'
+      }, { status: 503 });
     }
 
     // Fetch existing rows from 'Outliers Tracker'!A:R
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: "'Outliers Tracker'!A2:R1000"
-    });
-
-    const rows = response.data.values || [];
+    const { rows } = await readTrackerSheet(sheets, SPREADSHEET_ID);
     const todayIST = getISTTimestamp().formattedDate;
 
     let todayCount = 0;
@@ -139,7 +139,7 @@ export async function GET() {
       sheetUrl: SHEET_URL,
       folderUrl: FOLDER_URL,
       spreadsheetId: SPREADSHEET_ID,
-      totalLogged: rows.length,
+      totalLogged: existingRecords.length,
       todayCount,
       todayIST,
       memberCounts,
@@ -204,12 +204,8 @@ export async function POST(req: NextRequest) {
     const incomingNormalized = normalizeVideoUrl(videoUrl);
 
     // 1. Check for duplicates in existing rows
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: "'Outliers Tracker'!A2:R1000"
-    });
-
-    const rows = response.data.values || [];
+    const snapshot = await readTrackerSheet(sheets, SPREADSHEET_ID);
+    const rows = snapshot.rows;
     const todayIST = getISTTimestamp().formattedDate;
 
     // Search for existing duplicate
@@ -274,24 +270,16 @@ export async function POST(req: NextRequest) {
       typeof reachRatio === 'number' ? `${reachRatio.toFixed(1)}x` : reachRatio, // J: Reach Ratio
       typeof outlierMultiplier === 'number' ? `${outlierMultiplier.toFixed(1)}x` : outlierMultiplier, // K: Multiplier
       outlierTier,                                               // L: Outlier Tier
-      visualHook || 'High-contrast visual hook with immediate payoff', // M: Visual Hook
-      audioStrategy || 'Original speech / high-engagement dialogue',    // N: Audio Strategy
-      secretFormula || 'Direct relatable problem-solution format',      // O: Secret Formula
+      visualHook || 'Not analyzed',                              // M: Visual Hook
+      audioStrategy || 'Not analyzed',                           // N: Audio Strategy
+      secretFormula || 'Not analyzed',                           // O: Secret Formula
       'Pending Review',                                          // P: Sir's Approval Status
       '',                                                        // Q: Sir's Reason / Feedback
       rawTimestamp                                               // R: Last Updated
     ];
 
     // 4. Append to 'Outliers Tracker'
-    const appendRes = await sheets.spreadsheets.values.append({
-      spreadsheetId: SPREADSHEET_ID,
-      range: "'Outliers Tracker'!A:R",
-      valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: {
-        values: [newRow]
-      }
-    });
+    const saved = await insertTrackerRecord(sheets, SPREADSHEET_ID, snapshot, newRow.map(value => String(value ?? '')));
 
     const updatedMemberCount = memberTodayCount + 1;
     const activeTeam = await getTeamMembers();
@@ -302,12 +290,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       duplicate: false,
-      message: `Successfully logged to Google Sheet! (${updatedMemberCount}/${memberDailyTarget} completed for today by ${submittedBy.trim()})`,
+      message: `Saved to Outliers Tracker row ${saved.rowNumber}. (${updatedMemberCount}/${memberDailyTarget} today by ${submittedBy.trim()})`,
       sheetUrl: SHEET_URL,
       memberTodayCount: updatedMemberCount,
       quotaTarget: memberDailyTarget,
       quotaRemaining: remainingQuota,
-      rowAppended: appendRes.data.updates?.updatedRange
+      rowAppended: saved.range,
+      rowNumber: saved.rowNumber
     });
   } catch (error: any) {
     console.error('Error saving to tracker sheet:', error);

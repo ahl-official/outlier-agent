@@ -2,6 +2,33 @@
 
 This is the ongoing project log. Update it for every project task. Entries distinguish completed implementation, verification, and pending work. Dates use the user's Asia/Calcutta timezone.
 
+## 2026-11-10 — Repaired Outliers Tracker saving and simplified the live sheet
+
+- Request: fix new outliers not saving in the backend-connected tracker tab; keep only the header yellow and all data/new rows unfilled.
+- Confirmed configured workbook `AHL Outliers Daily Tracker - Social Media Team`, tab `Outliers Tracker`, sheet ID 0. Other product tabs and the team roster were left unchanged.
+- Root cause confirmed through a live deployed-API write: the old broad `values.append` call was selecting a detected table starting in column R, writing complete new records into R:AI instead of A:R. The normal tracker reader then missed their Video URLs because it only inspected column F.
+- Recovered 26 misplaced records from R18:AI43 into A18:R43. Verified destination cells A:Q were empty, sources were literal values without formulas/chips, copied every original value in one batch, then cleared only the old overflow values in S:AI. Source/destination equality was checked. Repeated user save attempts were preserved rather than silently deduplicated.
+- Final verified sheet state: 38 saved entries, 17 unique video URLs, zero misplaced video entries in column W and zero temporary connection-check markers.
+- Live styling: removed three conditional fill rules; cleared body-row fills and restored readable black text; changed row 1 to yellow with black bold text; removed the tracker tab color. Existing values, dropdown validation and fixed column widths were preserved. Verified the yellow header/plain rows in the native Google Sheets browser view and through effective cell formats.
+- Added `src/tracker-sheet.ts`: resolve the exact tab/schema; read through its metadata-derived grid bound; insert a row after the last actual Video URL; explicitly write 18 columns starting at A; clear any inherited body fill; confirm the written URL from the atomic batch response. A full grid grows safely by one row. No broad values.append table-detection heuristic is used by the new path.
+- Tracker GET now counts actual video records, reports missing credentials as unavailable, and no longer truncates reads at row 1000. Approval matching uses the same bounded reader.
+- UI library saves now await tracker sync and surface failures; save confirmations include the exact sheet row. Prevented an unrelated previous video's breakdown from being attached to a newly saved candidate; absent analysis remains labeled as unavailable instead of receiving a generic invented hook/audio strategy.
+- Updated `scripts/setup-sheet-formatting.ts` to preserve the simple yellow-header/plain-body policy on future runs.
+- Validation: eight tracker regression tests passed; production build passed, including type checking and page generation; `git diff --check` passed. The revised API was exercised with a temporary row using the backend service account, confirmed in A14:R14 with a plain background, then removed with all original values preserved. Two tests of the old deployed API confirmed the R:AI misalignment; both temporary probes were identified by unique markers and removed without deleting user records.
+- The old deployment-specific URL still runs its original code and can reproduce the issue until users move to a deployment containing the fix. The user explicitly approved committing and pushing this repair to main. Commit/push results will be recorded after Git confirms them; deployment completion remains unverified.
+- Files: `src/tracker-sheet.ts`, tracker/review API routes, `src/app/page.tsx`, `scripts/setup-sheet-formatting.ts`, `tests/tracker.test.ts`, `package.json`, and this log. PDF artifacts/generator from the previous task remain separate local work.
+
+## 2026-11-10 — Personal project portfolio and interview PDF
+
+- Request: create a comprehensive project-details PDF for personal achievements and future interviews.
+- Personalization confirmed by the user: **Sushant - AI Intern; all project work completed individually**. The handbook presents end-to-end individual ownership without inventing employer details, experience dates or business-impact metrics.
+- Created `output/pdf/Sushant_Outlier_Agent_Project_Portfolio.pdf`: 21 pages covering the business problem, five product modules, architecture diagram, discovery/scoring/baselines, multimodal evidence pipeline, repeated-frame debugging case study, Format Map, eight-table data model, API inventory, operations, validation, personal contributions, interview pitches, STAR story, 12 interview questions/answers, resume wording, demo plan, roadmap and setup/source appendix.
+- Included explicit distinctions between implemented behavior, verified results and remaining work. Recorded the successful six-frame live check and the Gemini upload/audio verification limitation accurately.
+- Added 21 navigation bookmarks, clickable source links, embedded fonts, consistent typography, page numbers and a personalized cover. Excluded credential values, private contact details and production Sheet IDs.
+- Editable text is saved alongside the PDF as `output/pdf/Sushant_Outlier_Agent_Project_Portfolio.md`. Reproducible generator: `scripts/create-project-portfolio.py` (ReportLab; Windows Arial fonts).
+- Validation: confirmed 21 pages, 21 bookmarks and 4 hyperlinks with pypdf; extracted text with pdfplumber; checked page bounds, expected name/role, key facts and absence of private values. Rendered all 21 pages with bundled Poppler, reviewed contact sheets, and inspected final detailed renders after formatting corrections. Final PDF size: 154,392 bytes; approximately 5,407 words.
+- No application code or external services were changed. Generated documentation and this log update are local and uncommitted. Latest pushed application/documentation snapshot remains `edf3c9e`.
+
 ## 2026-11-10 — Commit and push analysis corrections
 
 - Request: commit and push the completed Deep Dive analysis fixes.

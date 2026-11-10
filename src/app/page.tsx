@@ -508,6 +508,8 @@ export default function HomePage() {
           existingUrls: data.existingUrls || [],
           existingRecords: data.existingRecords || []
         });
+      } else {
+        showToast(data.error || 'Could not load the connected Outliers Tracker.');
       }
     } catch (err) {
       console.error('Error fetching tracker data:', err);
@@ -544,8 +546,9 @@ export default function HomePage() {
     c?: OutlierCandidate | null,
     silent: boolean = false
   ): Promise<{ success: boolean; duplicate?: boolean; message?: string }> => {
-    const breakdown = b || whatsAppTarget?.breakdown || currentBreakdown;
     const candidate = c || whatsAppTarget?.candidate || currentCandidate;
+    const proposedBreakdown = b || (c ? null : whatsAppTarget?.breakdown || currentBreakdown);
+    const breakdown = proposedBreakdown && (!candidate || normalizeUrlClient(proposedBreakdown.candidateUrl) === normalizeUrlClient(candidate.url)) ? proposedBreakdown : null;
     const videoUrl = candidate?.url || breakdown?.candidateUrl;
 
     if (!videoUrl) {
@@ -562,11 +565,11 @@ export default function HomePage() {
       const reachRatio = candidate?.viewToFollowerRatio || (followers > 0 ? views / followers : 0);
       const multiplier = candidate?.outlierMultiplier || breakdown?.metrics?.outlierMultiplier || 0;
       const tier = candidate?.sopTaxonomy?.outlierTier || breakdown?.sopTaxonomy?.outlierTier || 'Notable Outlier (3x+)';
-      const visualHook = breakdown?.deepVisualAnalysis?.winningVisualHook?.whatIsShown || breakdown?.contentAnalysis?.hookHeadline || 'High-contrast visual hook with immediate payoff';
-      const audioStrategy = breakdown?.deepVisualAnalysis?.audioAndMusicStrategy?.trackName 
-        ? `${breakdown.deepVisualAnalysis.audioAndMusicStrategy.trackName} (${breakdown.deepVisualAnalysis.audioAndMusicStrategy.audioType || 'Original Audio'})`
-        : (breakdown?.contentAnalysis?.audioOrMusicTrack || candidate?.musicOrAudio || 'High-engagement dialogue / original speech');
-      const secretFormula = breakdown?.strategistVerdict?.executiveVerdict || breakdown?.whyOutlierDiagnosis?.primaryDriver || candidate?.whyOutlier || 'Relatable problem-solution hook with immediate transformation';
+      const visualHook = breakdown?.sixReasonsAnalysis?.firstSixSeconds.visualHook || breakdown?.contentAnalysis?.hookHeadline || 'Not analyzed';
+      const audioStrategy = breakdown?.sixReasonsAnalysis
+        ? (breakdown.sixReasonsAnalysis.analyzedWithAudio ? breakdown.sixReasonsAnalysis.firstSixSeconds.audioHook : 'Audio not verified')
+        : (candidate?.musicOrAudio ? `${candidate.musicOrAudio} (metadata only)` : 'Not analyzed');
+      const secretFormula = breakdown?.sixReasonsAnalysis?.sixReasons[0]?.paragraph || breakdown?.whyOutlierDiagnosis?.primaryDriver || candidate?.whyOutlier || 'Not analyzed';
 
       const res = await fetch('/api/tracker', {
         method: 'POST',
@@ -608,7 +611,7 @@ export default function HomePage() {
         setSheetDuplicateInfo(null);
         await fetchTrackerData();
         if (!silent) {
-          showToast(`✅ Saved to Google Sheet! (${data.memberTodayCount}/${data.quotaTarget || 10} completed today by ${teamMember})`);
+          showToast(data.message || 'Saved to Outliers Tracker.');
         }
         return { success: true, duplicate: false, message: data.message };
       } else {
@@ -1001,8 +1004,14 @@ export default function HomePage() {
       if (data.success && data.items) {
         setBoardItems(data.items);
         // Automatically sync to Google Sheet so outliers are never missed
-        handleLogToSheet(breakdown, candidate, true);
-        showToast('Saved to Outliers Library & syncing to Google Sheet! 🚀');
+        const sync = await handleLogToSheet(breakdown, candidate, true);
+        if (sync.success) {
+          showToast(`Saved to Library. ${sync.message || 'Saved to Outliers Tracker.'}`);
+        } else if (sync.duplicate) {
+          showToast('Saved to Library. This video is already in Outliers Tracker.');
+        } else {
+          showToast(`Saved to Library, but tracker save failed: ${sync.message || 'Unknown error'}. Use the Sheet button to retry.`);
+        }
       } else {
         showToast(data.error || 'Failed to add to library');
       }
