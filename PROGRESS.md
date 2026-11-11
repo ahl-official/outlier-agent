@@ -6,6 +6,7 @@ This is the ongoing project log. Update it for every project task. Entries disti
 
 - The tracker supports inserting Six Creative Findings in P, immediately after the verdict in O. Fresh saves and re-saves write the six numbered findings there. Review status, feedback, and last updated move to Q:S, and the app supports both layouts during rollout.
 - All 11 tracker tests passed, including the shifted column positions and six-line export. The app deployment precedes the live sheet insertion.
+- TypeScript passed. Commit `ed29a2f` was pushed to `main` and Vercel deployment `dpl_5gy11pH52ynaqPtNF5V3VMfQJS1L` reached Ready before the sheet changed. Backfilled rows 14–20 using saved findings, with a short verdict in O20. Verified the wrapped P column in Sheets, matched the shifted review cells to the original values and formats, and confirmed the production tracker API reads the new layout. Older rows without six saved findings are blank in P until reanalyzed and saved.
 
 ## 2026-11-11 — Added the executive verdict to tracker column O
 
