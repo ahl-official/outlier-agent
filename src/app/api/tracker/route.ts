@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getGoogleSheetsClient } from '@/google-sheets';
 import { getTeamMembers } from '@/storage';
 import { normalizeVideoUrl } from '@/lib/video-url';
-import { readTrackerSheet, insertTrackerRecord } from '@/tracker-sheet';
+import { readTrackerSheet, insertTrackerRecord, updateTrackerAnalysis } from '@/tracker-sheet';
+import { trackerAnalysisColumns } from '@/tracker-analysis';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -180,10 +181,11 @@ export async function POST(req: NextRequest) {
       outlierTier = 'Notable Outlier',
       visualHook = '',
       audioStrategy = '',
-      secretFormula = ''
+      secretFormula = '',
+      analysis
     } = body;
 
-    if (!videoUrl) {
+    if (typeof videoUrl !== 'string' || !videoUrl.trim()) {
       return NextResponse.json(
         { success: false, error: 'Video URL is required', message: 'Video URL is required' },
         { status: 400 }
@@ -202,6 +204,7 @@ export async function POST(req: NextRequest) {
       );
     }
     const incomingNormalized = normalizeVideoUrl(videoUrl);
+    const analysisColumns = trackerAnalysisColumns(videoUrl, analysis);
 
     // 1. Check for duplicates in existing rows
     const snapshot = await readTrackerSheet(sheets, SPREADSHEET_ID);
@@ -215,6 +218,18 @@ export async function POST(req: NextRequest) {
       if (existingUrl) {
         const existingNormalized = normalizeVideoUrl(existingUrl);
         if (existingNormalized === incomingNormalized) {
+          const rowNumber = i + 2;
+          if (analysisColumns) {
+            const updated = await updateTrackerAnalysis(sheets, SPREADSHEET_ID, snapshot.sheetId, rowNumber,
+              videoUrl, analysisColumns, getISTTimestamp().rawTimestamp);
+            return NextResponse.json({
+              success: true,
+              rowNumber,
+              sheetUrl: SHEET_URL,
+              message: updated ? `Updated video analysis in Outliers Tracker row ${rowNumber}.`
+                : `Video analysis is already saved in Outliers Tracker row ${rowNumber}.`
+            });
+          }
           const prevMember = row[1] || 'A team member';
           const prevDate = row[0] || 'Previously';
           const prevStatus = row[15] || 'Pending Review';
@@ -270,9 +285,9 @@ export async function POST(req: NextRequest) {
       typeof reachRatio === 'number' ? `${reachRatio.toFixed(1)}x` : reachRatio, // J: Reach Ratio
       typeof outlierMultiplier === 'number' ? `${outlierMultiplier.toFixed(1)}x` : outlierMultiplier, // K: Multiplier
       outlierTier,                                               // L: Outlier Tier
-      visualHook || 'Not analyzed',                              // M: Visual Hook
-      audioStrategy || 'Not analyzed',                           // N: Audio Strategy
-      secretFormula || 'Not analyzed',                           // O: Secret Formula
+      analysisColumns?.[0] || visualHook || 'Not analyzed',      // M: Visual Hook
+      analysisColumns?.[1] || audioStrategy || 'Not analyzed',   // N: Audio Strategy
+      analysisColumns?.[2] || secretFormula || 'Not analyzed',    // O: Secret Formula
       'Pending Review',                                          // P: Sir's Approval Status
       '',                                                        // Q: Sir's Reason / Feedback
       rawTimestamp                                               // R: Last Updated
@@ -290,7 +305,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       duplicate: false,
-      message: `Saved to Outliers Tracker row ${saved.rowNumber}. (${updatedMemberCount}/${memberDailyTarget} today by ${submittedBy.trim()})`,
+      message: `Saved ${analysisColumns ? 'video analysis and metrics' : 'video details'} to Outliers Tracker row ${saved.rowNumber}. (${updatedMemberCount}/${memberDailyTarget} today by ${submittedBy.trim()})`,
       sheetUrl: SHEET_URL,
       memberTodayCount: updatedMemberCount,
       quotaTarget: memberDailyTarget,

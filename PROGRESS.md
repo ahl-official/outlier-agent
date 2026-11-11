@@ -2,6 +2,14 @@
 
 This is the ongoing project log. Update it for every project task. Entries distinguish completed implementation, verification, and pending work. Dates use the user's Asia/Calcutta timezone.
 
+## 2026-11-11 — Restored analysis in Outliers Tracker rows 14–19
+
+- Rows 14–19 had valid submissions in A:R, but M:O held opening text, metadata, performance metrics, or `Not analyzed`. The previous duplicate check blocked a later Deep Dive export for the same video, and the client used metric fallbacks in the creative analysis column.
+- Recovered evidence-backed reports for rows 14, 15 and 18 from saved records. Ran fresh video analysis for rows 16, 17 and 19. Row 19 hit Gemini HTTP 429 and completed through OpenRouter.
+- Updated M:O and the last-updated field R for the six existing rows. Re-read the targeted cells, matched all exported findings against the source reports and checked that URLs, metrics and review fields were preserved. Verified the updated cells in the native Sheets UI. Existing column widths can clip the longer findings in the grid.
+- The local app fix exports the observed visual hook, audio verification status and all six creative findings for a matching evidence-backed report. A subsequent Save to Google Sheet updates M:O and R on the existing row. Identical retries leave the row as-is, and duplicate saves without a completed analysis remain blocked. New metadata-only saves use explicit missing-analysis labels. Sheet writes confirm the URL and analysis fields in the response.
+- Code: `src/tracker-analysis.ts`, `src/tracker-sheet.ts`, tracker POST route, dashboard save flow and tracker regressions. All ten tracker tests, TypeScript, the production build and diff checks passed. The live sheet backfill is complete. Publication follows the earlier request to push and deploy this analysis workflow.
+
 ## 2026-11-10 — Publish the repaired video fallback
 
 - Request: commit, push and deploy the tested Gemini-to-OpenRouter fallback repair.

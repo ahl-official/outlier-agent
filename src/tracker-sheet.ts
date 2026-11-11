@@ -1,4 +1,5 @@
 import type { sheets_v4 } from 'googleapis';
+import { normalizeVideoUrl } from './lib/video-url';
 
 export const TRACKER_TAB = 'Outliers Tracker';
 export const TRACKER_COLUMNS = 18;
@@ -12,6 +13,38 @@ export interface TrackerSnapshot {
 
 export function trackerRange(cells: string): string {
   return `'${TRACKER_TAB}'!${cells}`;
+}
+
+export async function updateTrackerAnalysis(sheets: sheets_v4.Sheets, spreadsheetId: string, sheetId: number,
+  rowNumber: number, videoUrl: string, analysis: [string, string, string], timestamp: string) {
+  const range = trackerRange(`F${rowNumber}:R${rowNumber}`);
+  const current = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+  const row = current.data.values?.[0];
+  if (normalizeVideoUrl(String(row?.[0] || '')) !== normalizeVideoUrl(videoUrl)) {
+    throw new Error('The tracker row moved. Refresh and save again.');
+  }
+  if (analysis.every((value, index) => row?.[7 + index] === value)) return false;
+
+  const update = (columnIndex: number, values: string[]): sheets_v4.Schema$Request => ({
+    updateCells: {
+      start: { sheetId, rowIndex: rowNumber - 1, columnIndex },
+      rows: [{ values: values.map(value => ({ userEnteredValue: { stringValue: value } })) }],
+      fields: 'userEnteredValue'
+    }
+  });
+  const result = await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: {
+    requests: [update(12, analysis), update(17, [timestamp])],
+    includeSpreadsheetInResponse: true,
+    responseRanges: [range],
+    responseIncludeGridData: true
+  } });
+  const saved = result.data.updatedSpreadsheet?.sheets?.find(sheet => sheet.properties?.sheetId === sheetId)
+    ?.data?.[0]?.rowData?.[0]?.values;
+  if (!saved || saved[0]?.userEnteredValue?.stringValue !== row?.[0] ||
+      !analysis.every((value, index) => saved[7 + index]?.userEnteredValue?.stringValue === value)) {
+    throw new Error('The analysis update could not be confirmed. Refresh the tracker before retrying.');
+  }
+  return true;
 }
 
 /** Resolve the actual tab and read its finite grid, including records beyond row 1000. */
@@ -58,7 +91,8 @@ export async function insertTrackerRecord(sheets: sheets_v4.Sheets, spreadsheetI
     requestBody: { requests: plan.requests, includeSpreadsheetInResponse: true, responseRanges: [plan.range], responseIncludeGridData: true }
   });
   const saved = result.data.updatedSpreadsheet?.sheets?.find(sheet => sheet.properties?.sheetId === snapshot.sheetId)?.data?.[0]?.rowData?.[0]?.values;
-  if (saved?.[5]?.userEnteredValue?.stringValue !== values[5]) {
+  if (!saved || [5, 12, 13, 14].some(index =>
+    (saved[index]?.userEnteredValue?.stringValue ?? '') !== values[index])) {
     throw new Error('The tracker write could not be confirmed. Refresh the tracker before retrying to avoid duplicates.');
   }
   return plan;

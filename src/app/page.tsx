@@ -46,6 +46,7 @@ import {
 } from 'lucide-react';
 import FormatMapTab from './components/FormatMapTab';
 import AnalysisEvidence from './components/AnalysisEvidence';
+import { trackerAnalysisPayload } from '@/tracker-analysis';
 import { OutlierCandidate, DetailedOutlierBreakdown, BoardItem, BoardStatus } from '@/types';
 import { 
   DEFAULT_RADAR_KEYWORDS, 
@@ -547,7 +548,7 @@ export default function HomePage() {
     silent: boolean = false
   ): Promise<{ success: boolean; duplicate?: boolean; message?: string }> => {
     const candidate = c || whatsAppTarget?.candidate || currentCandidate;
-    const proposedBreakdown = b || (c ? null : whatsAppTarget?.breakdown || currentBreakdown);
+    const proposedBreakdown = b || (c ? currentBreakdown : whatsAppTarget?.breakdown || currentBreakdown);
     const breakdown = proposedBreakdown && (!candidate || normalizeUrlClient(proposedBreakdown.candidateUrl) === normalizeUrlClient(candidate.url)) ? proposedBreakdown : null;
     const videoUrl = candidate?.url || breakdown?.candidateUrl;
 
@@ -565,11 +566,8 @@ export default function HomePage() {
       const reachRatio = candidate?.viewToFollowerRatio || (followers > 0 ? views / followers : 0);
       const multiplier = candidate?.outlierMultiplier || breakdown?.metrics?.outlierMultiplier || 0;
       const tier = candidate?.sopTaxonomy?.outlierTier || breakdown?.sopTaxonomy?.outlierTier || 'Notable Outlier (3x+)';
-      const visualHook = breakdown?.sixReasonsAnalysis?.firstSixSeconds.visualHook || breakdown?.contentAnalysis?.hookHeadline || 'Not analyzed';
-      const audioStrategy = breakdown?.sixReasonsAnalysis
-        ? (breakdown.sixReasonsAnalysis.analyzedWithAudio ? breakdown.sixReasonsAnalysis.firstSixSeconds.audioHook : 'Audio not verified')
-        : (candidate?.musicOrAudio ? `${candidate.musicOrAudio} (metadata only)` : 'Not analyzed');
-      const secretFormula = breakdown?.sixReasonsAnalysis?.sixReasons[0]?.paragraph || breakdown?.whyOutlierDiagnosis?.primaryDriver || candidate?.whyOutlier || 'Not analyzed';
+      const analysis = trackerAnalysisPayload(breakdown);
+      const audioStrategy = candidate?.musicOrAudio ? `${candidate.musicOrAudio} (metadata only)` : 'Not analyzed';
 
       const res = await fetch('/api/tracker', {
         method: 'POST',
@@ -586,9 +584,8 @@ export default function HomePage() {
           reachRatio,
           outlierMultiplier: multiplier,
           outlierTier: tier,
-          visualHook,
           audioStrategy,
-          secretFormula
+          analysis
         })
       });
 
@@ -2540,7 +2537,7 @@ export default function HomePage() {
                     style={{ padding: '12px 18px', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
                     title="Save this outlier record into Sir's Google Sheet"
                   >
-                    <FileSpreadsheet size={16} /> Save to Google Sheet
+                    <FileSpreadsheet size={16} /> {isLoggingToSheet ? 'Saving…' : currentBreakdown.aiAgentAudit?.status === 'ai_analyzed' ? 'Save analysis to Google Sheet' : 'Save video details to Google Sheet'}
                   </button>
                   <button
                     type="button"

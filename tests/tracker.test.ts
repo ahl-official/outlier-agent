@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readTrackerSheet, planTrackerInsert, insertTrackerRecord, planSimpleTrackerStyle, type TrackerSnapshot } from '../src/tracker-sheet';
+import { updateTrackerAnalysis } from '../src/tracker-sheet';
+import { trackerAnalysisColumns } from '../src/tracker-analysis';
+import { ANALYSIS_VERSION } from '../src/breakdown/evidence';
 
 function snapshot(): TrackerSnapshot {
   const rows = Array.from({ length: 42 }, () => Array(18).fill(''));
@@ -92,4 +95,45 @@ test('simple styling removes fill rules/banding and colors only the header yello
   assert.equal(fills[1].range?.endRowIndex, 1);
   assert.deepEqual(fills[1].cell?.userEnteredFormat?.backgroundColorStyle?.rgbColor, { red: 1, green: 1, blue: 0 });
   assert.ok(fills.every(request => !request.fields?.includes('userEnteredValue')));
+});
+
+test('tracker exports six findings for the same video and rejects unavailable or unrelated reports', () => {
+  const report = {
+    candidateUrl: 'https://www.instagram.com/reel/SomeId/', analysisVersion: ANALYSIS_VERSION,
+    status: 'ai_analyzed', evidenceSource: 'frames',
+    findings: { firstSixSeconds: { visualHook: 'The stylist parts the hair.', audioHook: 'Unverified speech' },
+      analyzedWithAudio: false, sixReasons: Array.from({ length: 6 }, (_, index) => ({ heading: `Finding ${index + 1}`, paragraph: 'Observed visual evidence.' })) }
+  };
+  const url = 'https://www.instagram.com/p/SomeId/?utm_source=test';
+  const columns = trackerAnalysisColumns(url, report);
+  assert.equal(columns?.[0], 'The stylist parts the hair.');
+  assert.equal(columns?.[1], 'Audio not verified');
+  assert.match(columns![2], /6\. Finding 6/);
+  assert.equal(trackerAnalysisColumns(url, { ...report, status: 'unavailable' }), null);
+  assert.equal(trackerAnalysisColumns('https://www.instagram.com/p/OtherId/', report), null);
+});
+
+test('re-saving a matching video writes only M:O and R and retries are idempotent', async () => {
+  const url = 'https://www.instagram.com/p/SomeId/';
+  const analysis: [string, string, string] = ['Observed hook', 'Audio not verified', 'Six findings'];
+  const row = [url, '', '', '', '', '', '', 'Not analyzed', '', '', 'Approved', 'Keep feedback', 'Old timestamp'];
+  let writes = 0;
+  const sheets = { spreadsheets: {
+    values: { get: async () => ({ data: { values: [row] } }) },
+    batchUpdate: async (input: any) => {
+      writes++;
+      assert.deepEqual(input.requestBody.requests.map((request: any) => request.updateCells.start.columnIndex), [12, 17]);
+      assert.ok(input.requestBody.requests.every((request: any) => request.updateCells.start.rowIndex === 13));
+      row.splice(7, 3, ...analysis);
+      row[12] = 'New timestamp';
+      return { data: { updatedSpreadsheet: { sheets: [{ properties: { sheetId: 0 }, data: [{ rowData: [{ values: row.map(value => ({ userEnteredValue: { stringValue: value } })) }] }] }] } } };
+    }
+  } };
+  assert.equal(await updateTrackerAnalysis(sheets as any, 'id', 0, 14, url, analysis, 'New timestamp'), true);
+  assert.equal(await updateTrackerAnalysis(sheets as any, 'id', 0, 14, url, analysis, 'Later'), false);
+  assert.equal(writes, 1);
+  assert.equal(row[10], 'Approved');
+  assert.equal(row[11], 'Keep feedback');
+  row[0] = 'https://www.instagram.com/p/OtherId/';
+  await assert.rejects(() => updateTrackerAnalysis(sheets as any, 'id', 0, 14, url, analysis, 'Later'), /row moved/);
 });
