@@ -267,6 +267,7 @@ export interface SixReasonsAnalysis {
   }[];
   creativeAdaptation: string;
   closingLesson: string;
+  outlierVerdict?: string;
   /** Format Map tags from the same call (keys from scoring/format-taxonomy.ts); absent if the model gave no valid key */
   format?: string;
   editingStyle?: string;

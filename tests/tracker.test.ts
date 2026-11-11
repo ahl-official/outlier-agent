@@ -97,7 +97,7 @@ test('simple styling removes fill rules/banding and colors only the header yello
   assert.ok(fills.every(request => !request.fields?.includes('userEnteredValue')));
 });
 
-test('tracker exports six findings for the same video and rejects unavailable or unrelated reports', () => {
+test('tracker exports a short verdict for the same video and rejects unavailable or unrelated reports', () => {
   const report = {
     candidateUrl: 'https://www.instagram.com/reel/SomeId/', analysisVersion: ANALYSIS_VERSION,
     status: 'ai_analyzed', evidenceSource: 'frames',
@@ -108,13 +108,12 @@ test('tracker exports six findings for the same video and rejects unavailable or
   const columns = trackerAnalysisColumns(url, report);
   assert.equal(columns?.[0], 'The stylist parts the hair.');
   assert.equal(columns?.[1], 'Audio not verified');
-  assert.match(columns![2], /6\. Finding 6/);
+  assert.equal(columns?.[2], 'Observed visual evidence.');
+  const outlierVerdict = 'The overhead shot shows how the parting sits. That angle gives viewers a clear way to judge the fit.';
   const concise = trackerAnalysisColumns(url, { ...report, findings: { ...report.findings,
-    sixReasons: ['the parting', 'the clip', 'the back', 'the front', 'the fit', 'the finish'].map(detail =>
-      ({ heading: detail, paragraph: `Show ${detail} in close-up so viewers can judge the fit.` }))
+    outlierVerdict
   } });
-  assert.equal(concise?.[2].split('\n').length, 7);
-  assert.match(concise![2], /^1\. Show the parting/);
+  assert.equal(concise?.[2], outlierVerdict);
   assert.equal(trackerAnalysisColumns(url, { ...report, status: 'unavailable' }), null);
   assert.equal(trackerAnalysisColumns('https://www.instagram.com/p/OtherId/', report), null);
 });

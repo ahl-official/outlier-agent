@@ -40,6 +40,7 @@ Respond in strict JSON with this exact shape:
   ],
   "creativeAdaptation": "concise, practical creative direction for how we could adapt the strongest learning into an original reel for this category - the principle, not a copy of the script",
   "closingLesson": "one short paragraph: the single most valuable creative lesson and how it could inspire a new original idea",
+  "outlierVerdict": "2 or 3 short sentences, up to 65 words total: name the strongest creative choice, say where it appears, and explain why it may have helped the video stand out; use only the supplied evidence",
   "format": "exactly one FORMAT key from the list below",
   "editingStyle": "exactly one EDITING STYLE key from the list below"
 }
@@ -209,6 +210,7 @@ function parsedResponseToAnalysis(parsed: any, modelUsed: string, analyzedWithAu
     })),
     creativeAdaptation: parsed.creativeAdaptation || '',
     closingLesson: parsed.closingLesson || '',
+    outlierVerdict: typeof parsed.outlierVerdict === 'string' ? parsed.outlierVerdict.trim() : undefined,
     format: normalizeFormatKey(parsed.format) ?? undefined,
     editingStyle: normalizeEditingStyleKey(parsed.editingStyle) ?? undefined,
     analyzedWithAudio,

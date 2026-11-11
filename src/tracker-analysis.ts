@@ -1,6 +1,8 @@
-import { ANALYSIS_VERSION, hasConciseFindings } from './breakdown/evidence';
+import { ANALYSIS_VERSION } from './breakdown/evidence';
 import { normalizeVideoUrl } from './lib/video-url';
 import type { DetailedOutlierBreakdown } from './types';
+
+const sentenceSegmenter = new Intl.Segmenter('en', { granularity: 'sentence' });
 
 export function trackerAnalysisPayload(report?: DetailedOutlierBreakdown | null) {
   if (!report) return undefined;
@@ -28,14 +30,14 @@ export function trackerAnalysisColumns(videoUrl: string, input: unknown): [strin
         typeof reason.paragraph === 'string' && reason.paragraph.trim())) return null;
 
   const audio = findings.firstSixSeconds.audioHook;
-  const source = report.evidenceSource === 'frames' ? 'Analysis from sampled video frames' : 'Analysis from video';
-  const concise = hasConciseFindings(findings.sixReasons);
-  const points = findings.sixReasons.map((reason, index) =>
-    `${index + 1}. ${concise ? reason.paragraph.trim() : `${reason.heading.trim()} — ${reason.paragraph.trim()}`}`);
+  const verdict = typeof findings.outlierVerdict === 'string' ? findings.outlierVerdict.trim().replace(/\s+/g, ' ') : '';
+  const sentenceCount = Array.from(sentenceSegmenter.segment(verdict)).length;
+  const strongestFinding = Array.from(sentenceSegmenter.segment(findings.sixReasons[0].paragraph.trim()))
+    .slice(0, 3).map(part => part.segment.trim()).join(' ');
   return [
     hook.trim().slice(0, 49000),
     (report.evidenceSource === 'video' && findings.analyzedWithAudio === true && typeof audio === 'string' && audio.trim()
       ? audio.trim() : 'Audio not verified').slice(0, 49000),
-    [...points, source].join(concise ? '\n' : '\n\n').slice(0, 49000)
+    (sentenceCount >= 2 && sentenceCount <= 3 && verdict.split(' ').length <= 65 ? verdict : strongestFinding).slice(0, 49000)
   ];
 }
