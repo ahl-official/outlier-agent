@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { OutlierCandidate, ExtractedVideoFrame, DetailedOutlierBreakdown, AnalysisDiagnostic } from '../src/types';
-import { ANALYSIS_VERSION, actualVideoFrames, uniqueFrames, canReuseAnalysis } from '../src/breakdown/evidence';
+import { ANALYSIS_VERSION, actualVideoFrames, uniqueFrames, canReuseAnalysis, hasConciseFindings } from '../src/breakdown/evidence';
 import { extractFramesWithFfmpeg, downloadVideoForGemini } from '../src/breakdown/ffmpeg';
 import { runSocialMediaExpertAgent } from '../src/breakdown/social-agent';
 import { generateSixReasonsAnalysis } from '../src/breakdown/hook-analysis';
@@ -31,7 +31,14 @@ const samples: ExtractedVideoFrame[] = [
 ];
 const modelAnalysis = {
   reelCategory: 'Client testimonial', firstSixSeconds: { textHook: 'None', visualHook: 'Client seated in a salon', audioHook: 'Client speaks about wearing a topper' },
-  sixReasons: Array.from({ length: 6 }, (_, i) => ({ heading: `Observation ${i + 1}`, paragraph: 'The client speaks directly to camera. This may help establish credibility.' })),
+  sixReasons: [
+    { heading: 'Client introduction', paragraph: 'Open on the client speaking to camera so viewers know whose experience they are hearing.' },
+    { heading: 'Parting close-up', paragraph: 'Film the parting from above so buyers can judge where the topper meets their own hair.' },
+    { heading: 'Matching angles', paragraph: 'Repeat the front angle after fitting to make the change easy to compare.' },
+    { heading: 'Clip demonstration', paragraph: 'Hold on the clip fastening long enough for viewers to understand how the topper attaches.' },
+    { heading: 'Natural movement', paragraph: 'End the fitting with a head turn so viewers see how the hair moves in use.' },
+    { heading: 'Wear question', paragraph: 'Keep the client’s question about daily wear in the edit to address a specific purchase concern.' },
+  ],
   creativeAdaptation: 'Ask an actual client about their experience.', closingLesson: 'Personal accounts may help explain the product.',
   format: 'client_testimonial', editingStyle: 'talking_head'
 };
@@ -309,6 +316,14 @@ test('reports from the synthetic-frame era are not reusable', () => {
   assert.equal(canReuseAnalysis(legacy), false);
   assert.equal(canReuseAnalysis({ ...legacy, analysisVersion: ANALYSIS_VERSION }), true);
   assert.equal(canReuseAnalysis({ analysisVersion: ANALYSIS_VERSION } as DetailedOutlierBreakdown), false);
+});
+
+test('executive findings reject multiple sentences, repeated points, and oversized copy', () => {
+  const findings = modelAnalysis.sixReasons;
+  assert.equal(hasConciseFindings(findings), true);
+  assert.equal(hasConciseFindings([...findings.slice(0, 5), findings[0]]), false);
+  assert.equal(hasConciseFindings([...findings.slice(0, 5), { heading: 'Long', paragraph: 'Show the parting. Then show the clip.' }]), false);
+  assert.equal(hasConciseFindings([...findings.slice(0, 5), { heading: 'Long', paragraph: 'word '.repeat(33) }]), false);
 });
 
 test('end-to-end unavailable report has metrics but no template scene/audio/verdict', async () => {

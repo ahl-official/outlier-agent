@@ -109,6 +109,12 @@ test('tracker exports six findings for the same video and rejects unavailable or
   assert.equal(columns?.[0], 'The stylist parts the hair.');
   assert.equal(columns?.[1], 'Audio not verified');
   assert.match(columns![2], /6\. Finding 6/);
+  const concise = trackerAnalysisColumns(url, { ...report, findings: { ...report.findings,
+    sixReasons: ['the parting', 'the clip', 'the back', 'the front', 'the fit', 'the finish'].map(detail =>
+      ({ heading: detail, paragraph: `Show ${detail} in close-up so viewers can judge the fit.` }))
+  } });
+  assert.equal(concise?.[2].split('\n').length, 7);
+  assert.match(concise![2], /^1\. Show the parting/);
   assert.equal(trackerAnalysisColumns(url, { ...report, status: 'unavailable' }), null);
   assert.equal(trackerAnalysisColumns('https://www.instagram.com/p/OtherId/', report), null);
 });

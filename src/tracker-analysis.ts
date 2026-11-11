@@ -1,4 +1,4 @@
-import { ANALYSIS_VERSION } from './breakdown/evidence';
+import { ANALYSIS_VERSION, hasConciseFindings } from './breakdown/evidence';
 import { normalizeVideoUrl } from './lib/video-url';
 import type { DetailedOutlierBreakdown } from './types';
 
@@ -29,10 +29,13 @@ export function trackerAnalysisColumns(videoUrl: string, input: unknown): [strin
 
   const audio = findings.firstSixSeconds.audioHook;
   const source = report.evidenceSource === 'frames' ? 'Analysis from sampled video frames' : 'Analysis from video';
+  const concise = hasConciseFindings(findings.sixReasons);
+  const points = findings.sixReasons.map((reason, index) =>
+    `${index + 1}. ${concise ? reason.paragraph.trim() : `${reason.heading.trim()} — ${reason.paragraph.trim()}`}`);
   return [
     hook.trim().slice(0, 49000),
     (report.evidenceSource === 'video' && findings.analyzedWithAudio === true && typeof audio === 'string' && audio.trim()
       ? audio.trim() : 'Audio not verified').slice(0, 49000),
-    [...findings.sixReasons.map((reason, index) => `${index + 1}. ${reason.heading.trim()} — ${reason.paragraph.trim()}`), source].join('\n\n').slice(0, 49000)
+    [...points, source].join(concise ? '\n' : '\n\n').slice(0, 49000)
   ];
 }

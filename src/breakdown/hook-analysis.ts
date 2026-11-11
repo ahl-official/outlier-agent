@@ -1,6 +1,6 @@
 import { OutlierCandidate, ExtractedVideoFrame, SixReasonsAnalysis, AnalysisDiagnostic } from '../types';
 import { downloadVideoForGemini, prepareOpenRouterVideo } from './ffmpeg';
-import { actualVideoFrames } from './evidence';
+import { actualVideoFrames, FINDING_WORD_LIMIT, hasConciseFindings } from './evidence';
 import { prepareGeminiVideo, type PreparedVideo, type VideoMedia } from './gemini-video';
 import { taxonomyPromptBlock, normalizeFormatKey, normalizeEditingStyleKey } from '../scoring/format-taxonomy';
 
@@ -14,7 +14,9 @@ export const SIX_REASONS_SYSTEM_PROMPT = `You are an experienced Social Media Ma
 
 Do not simply describe the video or list generic factors such as "good hook" or "engaging content." Analyze the actual creative execution, storytelling, communication style, audience psychology, and content structure.
 
-For each of the 6 reasons, explain in one natural paragraph: what the creator did, why that creative decision may work for the audience, and what we can learn or adapt for our own content (American Hairline for men's hair systems, or Alchemane for women's hair toppers/extensions/wigs).
+Write exactly six distinct findings for an executive reader. Each finding is one sentence of at most ${FINDING_WORD_LIMIT} words, with a short label in the heading field. Tie a specific detail in this clip to a practical decision we can use: what to film, show, say, or edit and why that choice helps the viewer. Lead with the strongest finding.
+
+Choose the six angles from the evidence in this clip and vary the angles, labels and sentence openings across videos. If a finding could be pasted into another video's report without changing the details, rewrite it using an observable detail such as the object shown, the exact action, or the order of shots. Avoid repeating the opening hook in multiple findings. Do not invent evidence to fill a category.
 
 No retention, watch-time, completion-rate or algorithm analytics have been provided; never invent those metrics. A possible creative explanation is not a proven cause of virality. For still-frame inputs, timestamps identify only sampled instants; unobserved speech, text or transitions must be described as unknown.
 
@@ -33,7 +35,7 @@ Respond in strict JSON with this exact shape:
     "audioHook": "what is said or heard in the first 6 seconds - if you cannot determine this from what was provided, say so plainly rather than inventing it"
   },
   "sixReasons": [
-    { "heading": "short descriptive heading", "paragraph": "what/why/adapt paragraph" }
+    { "heading": "short descriptive label tied to the clip", "paragraph": "one sentence connecting an observed choice to a concrete strategy for our next video" }
     // exactly 6 of these
   ],
   "creativeAdaptation": "concise, practical creative direction for how we could adapt the strongest learning into an original reel for this category - the principle, not a copy of the script",
@@ -190,8 +192,7 @@ function isValidAnalysis(parsed: any): boolean {
   return typeof parsed?.reelCategory === 'string' &&
     typeof parsed.creativeAdaptation === 'string' && typeof parsed.closingLesson === 'string' &&
     ['textHook', 'visualHook', 'audioHook'].every(key => typeof parsed.firstSixSeconds?.[key] === 'string') &&
-    Array.isArray(parsed.sixReasons) && parsed.sixReasons.length === 6 &&
-    parsed.sixReasons.every((reason: any) => typeof reason?.heading === 'string' && reason.heading.trim() && typeof reason?.paragraph === 'string' && reason.paragraph.trim());
+    hasConciseFindings(parsed.sixReasons);
 }
 
 function parsedResponseToAnalysis(parsed: any, modelUsed: string, analyzedWithAudio: boolean): SixReasonsAnalysis {
@@ -203,8 +204,8 @@ function parsedResponseToAnalysis(parsed: any, modelUsed: string, analyzedWithAu
       audioHook: analyzedWithAudio ? parsed.firstSixSeconds.audioHook : 'Audio was not available; the audio hook could not be verified.'
     },
     sixReasons: parsed.sixReasons.slice(0, 6).map((r: any) => ({
-      heading: r.heading || 'Reason',
-      paragraph: r.paragraph || ''
+      heading: r.heading.trim(),
+      paragraph: r.paragraph.trim()
     })),
     creativeAdaptation: parsed.creativeAdaptation || '',
     closingLesson: parsed.closingLesson || '',

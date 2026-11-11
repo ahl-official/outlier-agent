@@ -2,6 +2,12 @@
 
 This is the ongoing project log. Update it for every project task. Entries distinguish completed implementation, verification, and pending work. Dates use the user's Asia/Calcutta timezone.
 
+## 2026-11-11 — Shortened the six creative findings for executive review
+
+- New Deep Dive findings use one sentence each, up to 32 words. The shared prompt asks for a specific observed choice and an actionable filming, messaging, or editing takeaway, with six angles chosen from each video's evidence.
+- Both provider paths validate sentence length and reject repeated wording within a report. Deep Dive regenerates cached reports that do not meet the new format when analysis is requested. The tracker exports new findings as six numbered lines plus the evidence source and can still read and save older reports.
+- Verified 21 breakdown tests, 10 tracker tests, and TypeScript. The changes are local. No live sheet rows were rewritten.
+
 ## 2026-11-11 — Restored analysis in Outliers Tracker rows 14–19
 
 - Rows 14–19 had valid submissions in A:R, but M:O held opening text, metadata, performance metrics, or `Not analyzed`. The previous duplicate check blocked a later Deep Dive export for the same video, and the client used metric fallbacks in the creative analysis column.
@@ -9,6 +15,7 @@ This is the ongoing project log. Update it for every project task. Entries disti
 - Updated M:O and the last-updated field R for the six existing rows. Re-read the targeted cells, matched all exported findings against the source reports and checked that URLs, metrics and review fields were preserved. Verified the updated cells in the native Sheets UI. Existing column widths can clip the longer findings in the grid.
 - The local app fix exports the observed visual hook, audio verification status and all six creative findings for a matching evidence-backed report. A subsequent Save to Google Sheet updates M:O and R on the existing row. Identical retries leave the row as-is, and duplicate saves without a completed analysis remain blocked. New metadata-only saves use explicit missing-analysis labels. Sheet writes confirm the URL and analysis fields in the response.
 - Code: `src/tracker-analysis.ts`, `src/tracker-sheet.ts`, tracker POST route, dashboard save flow and tracker regressions. All ten tracker tests, TypeScript, the production build and diff checks passed. The live sheet backfill is complete. Publication follows the earlier request to push and deploy this analysis workflow.
+- Published fix commit `ff62ee5` to `origin/main`. Vercel production deployment `dpl_33hi6jKeLnJR6RgiaBMS8AxAUx2j` is Ready. Verified the stable production URL served the new Save analysis to Google Sheet label and its tracker API returned all six repaired rows with their findings. The app update path was tested against a mock Sheets API. The production verification used read-only requests.
 
 ## 2026-11-10 — Publish the repaired video fallback
 
