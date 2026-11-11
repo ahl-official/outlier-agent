@@ -2,10 +2,16 @@
 
 This is the ongoing project log. Update it for every project task. Entries distinguish completed implementation, verification, and pending work. Dates use the user's Asia/Calcutta timezone.
 
+## 2026-11-11 — Added a separate tracker column for the six creative findings
+
+- The tracker supports inserting Six Creative Findings in P, immediately after the verdict in O. Fresh saves and re-saves write the six numbered findings there. Review status, feedback, and last updated move to Q:S, and the app supports both layouts during rollout.
+- All 11 tracker tests passed, including the shifted column positions and six-line export. The app deployment precedes the live sheet insertion.
+
 ## 2026-11-11 — Added the executive verdict to tracker column O
 
 - Renamed Outliers Tracker O1 and updated all 18 existing records in O2:O19. Twelve verdicts use saved creative observations. Six qualify the title or performance evidence because the saved analysis lacks specific visual findings. Preserved previous text in the cell notes and adjusted column O to wrap at a readable width.
 - Deep Dive requests a separate 2–3 sentence verdict for tracker export and keeps the six findings in the report. Older reports export the strongest existing finding. All 31 tests and TypeScript passed. Read back the live sheet entries and checked the rendered layout.
+- Pushed commit `f94459d` to `main`. Vercel production deployment `dpl_8mkkko8cevZXuUF4FubWJaF8rWt5` reached Ready. Verified the wrapped verdicts in Sheets after resizing column O.
 
 ## 2026-11-11 — Shortened the six creative findings for executive review
 

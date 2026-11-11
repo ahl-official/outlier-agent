@@ -17,9 +17,7 @@ function getISTTimestamp(): string {
 
 /**
  * Records Sir's Approve/Disapprove decision from the public swipeable review page, and marks
- * it in the same "Outliers Tracker" sheet row for that video (columns P/R - the sheet already
- * had these reserved as "Sir's Approval Status" / "Last Updated", defaulting to "Pending Review"
- * when the video was first logged).
+ * it in the review fields of the matching "Outliers Tracker" row.
  */
 export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
   try {
@@ -61,7 +59,7 @@ async function markApprovalInSheet(videoUrl: string, decision: 'approved' | 'dis
   const sheets = getGoogleSheetsClient();
   if (!sheets) return false;
 
-  const { rows } = await readTrackerSheet(sheets, SPREADSHEET_ID);
+  const { rows, hasFindingsColumn } = await readTrackerSheet(sheets, SPREADSHEET_ID);
   const target = normalizeVideoUrl(videoUrl);
 
   const rowIdx = rows.findIndex((row: any[]) => normalizeVideoUrl((row[5] || '').trim()) === target);
@@ -72,7 +70,7 @@ async function markApprovalInSheet(videoUrl: string, decision: 'approved' | 'dis
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'Outliers Tracker'!P${rowNumber}:R${rowNumber}`,
+    range: `'Outliers Tracker'!${hasFindingsColumn ? 'Q' : 'P'}${rowNumber}:${hasFindingsColumn ? 'S' : 'R'}${rowNumber}`,
     valueInputOption: 'USER_ENTERED',
     requestBody: {
       values: [[statusLabel, 'Decided via swipeable visual review link', getISTTimestamp()]]

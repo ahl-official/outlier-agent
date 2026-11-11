@@ -221,7 +221,7 @@ export async function POST(req: NextRequest) {
           const rowNumber = i + 2;
           if (analysisColumns) {
             const updated = await updateTrackerAnalysis(sheets, SPREADSHEET_ID, snapshot.sheetId, rowNumber,
-              videoUrl, analysisColumns, getISTTimestamp().rawTimestamp);
+              videoUrl, snapshot.hasFindingsColumn ? analysisColumns : [analysisColumns[0], analysisColumns[1], analysisColumns[2]], getISTTimestamp().rawTimestamp);
             return NextResponse.json({
               success: true,
               rowNumber,
@@ -294,7 +294,7 @@ export async function POST(req: NextRequest) {
     ];
 
     // 4. Append to 'Outliers Tracker'
-    const saved = await insertTrackerRecord(sheets, SPREADSHEET_ID, snapshot, newRow.map(value => String(value ?? '')));
+    const saved = await insertTrackerRecord(sheets, SPREADSHEET_ID, snapshot, newRow.map(value => String(value ?? '')), analysisColumns?.[3]);
 
     const updatedMemberCount = memberTodayCount + 1;
     const activeTeam = await getTeamMembers();

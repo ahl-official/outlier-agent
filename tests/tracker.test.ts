@@ -23,6 +23,14 @@ test('new records appear after the last video, before unrelated lower timestamps
   assert.equal(plan.requests[1].updateCells?.start?.rowIndex, 13);
 });
 
+test('new tracker layout places findings before approval, feedback and timestamp', () => {
+  const plan = planTrackerInsert({ ...snapshot(), hasFindingsColumn: true }, record, 'Six findings');
+  assert.equal(plan.range, "'Outliers Tracker'!A14:S14");
+  const cells = plan.requests[1].updateCells?.rows?.[0].values;
+  assert.deepEqual(cells?.slice(14).map(cell => cell.userEnteredValue?.stringValue),
+    [record[14], 'Six findings', record[15], record[16], record[17]]);
+});
+
 test('inserted body rows clear background styling without changing other row values', () => {
   const plan = planTrackerInsert(snapshot(), record);
   const style = plan.requests[2].repeatCell!;
@@ -114,6 +122,7 @@ test('tracker exports a short verdict for the same video and rejects unavailable
     outlierVerdict
   } });
   assert.equal(concise?.[2], outlierVerdict);
+  assert.equal(concise?.[3].split('\n').length, 6);
   assert.equal(trackerAnalysisColumns(url, { ...report, status: 'unavailable' }), null);
   assert.equal(trackerAnalysisColumns('https://www.instagram.com/p/OtherId/', report), null);
 });

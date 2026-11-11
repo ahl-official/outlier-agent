@@ -15,7 +15,7 @@ export function trackerAnalysisPayload(report?: DetailedOutlierBreakdown | null)
   };
 }
 
-export function trackerAnalysisColumns(videoUrl: string, input: unknown): [string, string, string] | null {
+export function trackerAnalysisColumns(videoUrl: string, input: unknown): [string, string, string, string] | null {
   const report = input as ReturnType<typeof trackerAnalysisPayload>;
   if (report?.analysisVersion !== ANALYSIS_VERSION || report.status !== 'ai_analyzed' ||
       (report.evidenceSource !== 'video' && report.evidenceSource !== 'frames') ||
@@ -38,6 +38,7 @@ export function trackerAnalysisColumns(videoUrl: string, input: unknown): [strin
     hook.trim().slice(0, 49000),
     (report.evidenceSource === 'video' && findings.analyzedWithAudio === true && typeof audio === 'string' && audio.trim()
       ? audio.trim() : 'Audio not verified').slice(0, 49000),
-    (sentenceCount >= 2 && sentenceCount <= 3 && verdict.split(' ').length <= 65 ? verdict : strongestFinding).slice(0, 49000)
+    (sentenceCount >= 2 && sentenceCount <= 3 && verdict.split(' ').length <= 65 ? verdict : strongestFinding).slice(0, 49000),
+    findings.sixReasons.map((reason, index) => `${index + 1}. ${reason.paragraph.trim().replace(/\s+/g, ' ')}`).join('\n').slice(0, 49000)
   ];
 }
