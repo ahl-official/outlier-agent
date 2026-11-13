@@ -5,7 +5,7 @@ import { unavailableAudit } from './social-agent';
 import { generateSixReasonsAnalysis } from './hook-analysis';
 import { ANALYSIS_VERSION, actualVideoFrames, uniqueFrames } from './evidence';
 
-export interface BreakdownOptions { aiApiKey?: string; }
+export interface BreakdownOptions { aiApiKey?: string; analysisTimeoutMs?: number; }
 
 /** Metrics come from provider data. Creative observations require actual model/media evidence. */
 export async function analyzeOutlierVideo(candidate: OutlierCandidate, options?: BreakdownOptions): Promise<DetailedOutlierBreakdown> {
@@ -35,7 +35,7 @@ export async function analyzeOutlierVideo(candidate: OutlierCandidate, options?:
       new Promise<null>(resolve => { timer = setTimeout(() => {
         diagnostics.push({ provider: 'analysis', code: 'timeout', message: 'The analysis time limit was reached.' });
         resolve(null);
-      }, 240000); })
+      }, options?.analysisTimeoutMs ?? 240000); })
     ]);
   } finally { if (timer) clearTimeout(timer); }
   const [frames, realComments] = await Promise.all([framesPromise, commentsPromise]);

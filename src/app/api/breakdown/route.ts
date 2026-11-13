@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getYouTubeVideoByUrl } from '@/providers/youtube';
-import { getInstagramReelByUrl } from '@/providers/instagram';
+import { getInstagramReelByUrl, InstagramReelTimeoutError } from '@/providers/instagram';
 import { analyzeOutlierVideo } from '@/breakdown/analyze';
 import { canReuseAnalysis } from '@/breakdown/evidence';
 import { getSavedRadarCache, getCachedVideo, saveVideoToRegistry, saveFormatLabels } from '@/storage';
@@ -10,13 +10,14 @@ export const maxDuration = 300; // Large videos need download, file processing a
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  const analysisDeadline = Date.now() + 280000;
   try {
     const body = await req.json();
     const { url, candidateId, forceRefresh, aiApiKey } = body;
 
     // 1. Check Master Video Registry for existing breakdown (0 tokens, 0 scraper calls!)
     const targetKey = url || candidateId;
-    if (targetKey && !forceRefresh && !aiApiKey) {
+    if (targetKey && !forceRefresh) {
       const cachedEntry = await getCachedVideo(targetKey, 72); // 72-hour TTL
       if (
         cachedEntry &&
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
     let candidate: OutlierCandidate | null = null;
 
     // 2. Check radar cache or master registry
-    if (candidateId) {
+    if (candidateId && !(forceRefresh && url)) {
       const cached = await getSavedRadarCache();
       const found = cached.find((c) => c.id === candidateId || c.url === candidateId);
       if (found) {
@@ -69,7 +70,10 @@ export async function POST(req: NextRequest) {
 
     // 4. Generate dynamic breakdown with frame-by-frame and strategist analysis
     const effectiveApiKey = (aiApiKey && String(aiApiKey).trim()) || process.env.GEMINI_API_KEY;
-    const analysis: DetailedOutlierBreakdown = await analyzeOutlierVideo(candidate, { aiApiKey: effectiveApiKey });
+    const analysis: DetailedOutlierBreakdown = await analyzeOutlierVideo(candidate, {
+      aiApiKey: effectiveApiKey,
+      analysisTimeoutMs: Math.max(1, Math.min(240000, analysisDeadline - Date.now()))
+    });
 
     // The six-reasons call also tagged Format x Editing Style - keep them for the Format Map
     const sixReasons = analysis.sixReasonsAnalysis;
@@ -92,6 +96,9 @@ export async function POST(req: NextRequest) {
       fromCache: false
     });
   } catch (error: any) {
+    if (error instanceof InstagramReelTimeoutError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 504 });
+    }
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

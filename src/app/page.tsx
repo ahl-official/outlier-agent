@@ -934,7 +934,7 @@ export default function HomePage() {
     }
   };
 
-  const handleAnalyzeUrl = async (urlToAnalyze?: string, candidateToUse?: OutlierCandidate) => {
+  const handleAnalyzeUrl = async (urlToAnalyze?: string, candidateToUse?: OutlierCandidate, forceRefresh = false) => {
     if (isAnalyzing) return;
     const targetUrl = urlToAnalyze || candidateToUse?.url || breakdownUrl;
     if (!targetUrl && !candidateToUse) {
@@ -961,7 +961,7 @@ export default function HomePage() {
           url: targetUrl,
           candidateId: candidateToUse?.id,
           aiApiKey: aiApiKey.trim() || undefined,
-          forceRefresh: true
+          forceRefresh
         })
       });
 
@@ -2260,7 +2260,7 @@ export default function HomePage() {
               <AnalysisEvidence
                 analysis={currentBreakdown}
                 onPreview={setSelectedFramePreview}
-                onRetry={() => handleAnalyzeUrl(currentBreakdown.candidateUrl, currentCandidate || undefined)}
+                onRetry={() => handleAnalyzeUrl(currentBreakdown.candidateUrl, currentCandidate || undefined, true)}
               />
 
               {/* Simple 6-Reasons Analysis + First 6 Seconds Hook Breakdown */}

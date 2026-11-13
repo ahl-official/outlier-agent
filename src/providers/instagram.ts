@@ -410,27 +410,41 @@ export async function searchInstagramOutliers(options: InstagramSearchOptions): 
 /**
  * Fetch a single Instagram Reel details by URL
  */
+export class InstagramReelTimeoutError extends Error {
+  constructor() {
+    super('Instagram reel lookup timed out. Check that the reel opens while signed out of Instagram, then retry.');
+  }
+}
+
 export async function getInstagramReelByUrl(rawUrl: string): Promise<OutlierCandidate | null> {
   const token = getApifyToken();
   const cleanUrl = normalizeInstagramUrl(rawUrl);
 
-  const runUrl = `${APIFY_BASE}/acts/${REEL_ACTOR}/run-sync-get-dataset-items?token=${token}&timeout=60`;
+  const runUrl = `${APIFY_BASE}/acts/${REEL_ACTOR}/run-sync-get-dataset-items?timeout=120`;
   const inputPayload = {
     username: [cleanUrl]
   };
 
-  const response = await fetch(runUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(inputPayload)
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Apify Reel lookup failed (${response.status}): ${errText}`);
+  let items: any[];
+  try {
+    const response = await fetch(runUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(inputPayload),
+      signal: AbortSignal.timeout(130000)
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      if (response.status === 408 || response.status === 504 || /timed[- ]out|timeout|time limit/i.test(detail)) {
+        throw new InstagramReelTimeoutError();
+      }
+      throw new Error(`Apify Reel lookup failed (HTTP ${response.status}).`);
+    }
+    items = await response.json();
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') throw new InstagramReelTimeoutError();
+    throw error;
   }
-
-  const items: any[] = await response.json();
   if (!Array.isArray(items) || items.length === 0) return null;
 
   const item = items[0];

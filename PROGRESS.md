@@ -2,6 +2,29 @@
 
 This is the ongoing project log. Update it for every project task. Entries distinguish completed implementation, verification, and pending work. Dates use the user's Asia/Calcutta timezone.
 
+## 2026-11-13 — Give Instagram reel lookups time to recover
+
+- Increased the direct Apify reel actor limit from 60 to 120 seconds, with a 130-second HTTP deadline. Recognized timeout failures return a clear retry message and HTTP 504. No automatic paid retry is started.
+- Deep Dive budgets its AI wait against elapsed request time. The prior local change to reuse completed reports and refresh reel details on explicit retry is included in this working tree.
+- All 21 breakdown tests, TypeScript, and diff checks passed. Changes are local. No live scrape, commit, push, or deployment was performed.
+
+## 2026-11-13 — Reused recent Deep Dive reports
+
+- Updated the dashboard and breakdown API so normal analysis requests can reuse a valid report from the 72-hour cache, even when an AI key is configured. Explicit retry requests refresh the video details by URL to avoid reusing stale media links.
+- All 21 breakdown tests, TypeScript, and diff checks passed. First-time lookup speed was not benchmarked. Changes are local and have not been committed, pushed, or deployed.
+
+## 2026-11-13 — Diagnosed Instagram Reel Scraper timeouts
+
+- Read existing Apify run metadata and sanitized logs. The six latest runs timed out after 60 seconds. The latest failed run logged a network disconnect before TLS setup, requeued the request, and was aborted at its 60-second limit. Earlier successful runs took about 6–38 seconds.
+- Confirmed `src/providers/instagram.ts` explicitly sets the 60-second actor run limit for direct reel lookups. Apify accepted the configured token for diagnostic reads and had started the affected runs. The logs do not establish why the upstream connection dropped.
+- No actor runs, app changes, commits, or deployments were made during this diagnosis.
+
+## 2026-11-12 — Rotated the Apify token
+
+- Verified the replacement token from `.env` under `INSTAGRAM_API_KEY`. Apify returned HTTP 200 for account authentication and the Instagram search, reel, and profile actor metadata requests. No actor was run.
+- Updated the existing Vercel secret shared by Production and Preview. Redeployed production and confirmed Vercel reported Ready and aliased `outlier-agent.vercel.app`.
+- No application source changes, commit, or push. The token value was kept out of logs and documentation.
+
 ## 2026-11-11 — Added a separate tracker column for the six creative findings
 
 - The tracker supports inserting Six Creative Findings in P, immediately after the verdict in O. Fresh saves and re-saves write the six numbered findings there. Review status, feedback, and last updated move to Q:S, and the app supports both layouts during rollout.
